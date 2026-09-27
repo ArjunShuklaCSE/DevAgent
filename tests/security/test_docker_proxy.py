@@ -144,10 +144,13 @@ async def test_other_endpoints_are_refused(proxied_client: docker.DockerClient) 
 
 
 async def test_containers_not_created_by_devagent_are_off_limits(
-    proxied_client: docker.DockerClient, docker_client: docker.DockerClient
+    proxied_client: docker.DockerClient,
+    docker_client: docker.DockerClient,
+    sandbox: DockerSandbox,
 ) -> None:
+    # Same image as the sandbox (always present), but not labelled as a DevAgent sandbox.
     outsider = await asyncio.to_thread(
-        docker_client.containers.create, "hello-world", labels={"app": "not-devagent"}
+        docker_client.containers.create, sandbox.config.image, labels={"app": "not-devagent"}
     )
     outsider_id = str(outsider.id)
     api = proxied_client.api
