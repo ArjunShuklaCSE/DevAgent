@@ -36,9 +36,14 @@ def settings() -> Settings:
 class RecordingRunQueue:
     def __init__(self) -> None:
         self.enqueued: list[UUID] = []
+        self.published: list[UUID] = []
 
     async def enqueue_run(self, run_id: UUID) -> bool:
         self.enqueued.append(run_id)
+        return True
+
+    async def enqueue_publish(self, run_id: UUID) -> bool:
+        self.published.append(run_id)
         return True
 
 

@@ -9,7 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from backend.errors import NotFoundError
-from database.models import AgentRun, Approval, LlmCall, TestRun, ToolCallRecord
+from backend.github.patch import render_patch
+from database.models import (
+    AgentRun,
+    Approval,
+    Issue,
+    LlmCall,
+    PullRequest,
+    TestRun,
+    ToolCallRecord,
+)
 
 
 class RunDetails:
@@ -69,3 +78,41 @@ class RunDetails:
                 "review_flags": list(run.result.get("review_flags", [])),
                 "validation": run.result.get("validation"),
             }
+
+    async def pull_request(self, run_id: UUID) -> PullRequest:
+        async with self._session_factory() as session:
+            await self._require(session, run_id)
+            pull = await session.scalar(select(PullRequest).where(PullRequest.run_id == run_id))
+            if pull is None:
+                raise NotFoundError(
+                    "No pull request was opened for this run", {"run_id": str(run_id)}
+                )
+            return pull
+
+    async def patch(self, run_id: UUID, author_name: str, author_email: str) -> tuple[str, str]:
+        """``(filename, git am patch)`` for the run's final diff."""
+        async with self._session_factory() as session:
+            run = await self._require(session, run_id)
+            issue = await session.get(Issue, run.issue_id)
+            if not run.final_diff:
+                raise NotFoundError("This run has no diff", {"run_id": str(run_id)})
+            pr_text: dict[str, Any] = run.result.get("pull_request") or {}
+            title = str(pr_text.get("title") or (issue.title if issue else "DevAgent fix"))
+            message = str(pr_text.get("commit_message") or title)
+            body = message.split("\n", 1)[1].strip() if "\n" in message else ""
+            if issue is not None and issue.number is not None:
+                body = f"{body}\n\nFixes #{issue.number}.".strip()
+            patch = render_patch(
+                run.final_diff,
+                subject=message.split("\n", 1)[0] or title,
+                body=body,
+                author_name=author_name,
+                author_email=author_email,
+                date=run.finished_at or run.created_at,
+            )
+        stem = (
+            f"issue-{issue.number}"
+            if issue is not None and issue.number
+            else f"run-{str(run_id)[:8]}"
+        )
+        return f"devagent-{stem}.patch", patch

@@ -4,14 +4,21 @@ import { connection } from "next/server";
 import { NewRunForm } from "@/components/new-run-form";
 import { RunsTable } from "@/components/recent-runs";
 import { SystemStatus } from "@/components/system-status";
-import { Card } from "@/components/ui";
+import { Card, ErrorState } from "@/components/ui";
 import { fetchSystemHealth } from "@/lib/health";
 
 const API_URL = process.env.DEVAGENT_API_INTERNAL_URL ?? "http://localhost:8000";
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ auth_error?: string }>;
+}) {
   await connection(); // health is per-request; never prerender it
-  const health = await fetchSystemHealth(API_URL);
+  const [health, { auth_error: authError }] = await Promise.all([
+    fetchSystemHealth(API_URL),
+    searchParams,
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -22,6 +29,9 @@ export default async function Home() {
           change and waits for your approval.
         </p>
       </div>
+      {authError && (
+        <ErrorState title="GitHub sign-in failed" error={authError.replaceAll("_", " ")} />
+      )}
       <div className="grid items-start gap-6 lg:grid-cols-[1fr_20rem]">
         <NewRunForm />
         <SystemStatus health={health} />

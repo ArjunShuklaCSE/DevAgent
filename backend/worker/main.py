@@ -9,7 +9,7 @@ import sys
 from typing import Any, ClassVar
 
 import structlog
-from arq import cron, run_worker
+from arq import cron, func, run_worker
 from arq.connections import RedisSettings
 from arq.worker import check_health
 from docker.errors import DockerException
@@ -17,11 +17,13 @@ from requests.exceptions import RequestException
 
 from backend import __version__
 from backend.config import Settings, get_settings
+from backend.crypto import SecretBox
 from backend.event_bus import RedisEventBus
 from backend.logging_setup import configure_logging
-from backend.queue import QUEUE_NAME
+from backend.queue import PUBLISH_RUN_JOB, QUEUE_NAME
 from backend.sandbox_factory import build_sandbox
-from backend.worker.jobs import execute_run, ping
+from backend.services.auth import AuthService, github_factory
+from backend.worker.jobs import execute_run, ping, publish
 from backend.worker.sandbox_jobs import reap_sandboxes, sandbox_check
 from database.engine import create_engine, create_session_factory
 from sandbox.docker_sandbox import SandboxError
@@ -39,6 +41,10 @@ async def _on_startup(ctx: dict[str, Any]) -> None:
     ctx["session_factory"] = create_session_factory(engine)
     # arq's own connection (ctx["redis"]) is a redis.asyncio.Redis; reuse it for events.
     ctx["event_bus"] = RedisEventBus(ctx["redis"])
+    box = SecretBox(settings.secret_key) if settings.secret_key is not None else None
+    ctx["auth_service"] = AuthService(
+        ctx["session_factory"], box, github_factory(settings.github_api_url), settings.github_token
+    )
     ctx["sandbox"] = None
     ctx["sandbox_image_id"] = None
     try:
@@ -69,7 +75,12 @@ def build_worker_settings(settings: Settings) -> type:
     """Build the arq settings class from typed settings (arq expects a class)."""
 
     class WorkerSettings:
-        functions: ClassVar[list[Any]] = [ping, execute_run, sandbox_check]
+        functions: ClassVar[list[Any]] = [
+            ping,
+            execute_run,
+            func(publish, name=PUBLISH_RUN_JOB),
+            sandbox_check,
+        ]
         cron_jobs: ClassVar[list[Any]] = [cron(reap_sandboxes, minute={0, 15, 30, 45})]
         queue_name = QUEUE_NAME
         redis_settings = RedisSettings.from_dsn(settings.redis_url.get_secret_value())

@@ -8,7 +8,7 @@ import logging
 import re
 import sys
 from collections.abc import Mapping, MutableMapping
-from typing import Any, Final
+from typing import Any, Final, TextIO
 
 import structlog
 from structlog.typing import EventDict, Processor, WrappedLogger
@@ -82,6 +82,35 @@ def build_processors(log_format: str) -> list[Processor]:
     ]
 
 
+class _StdoutLogger:
+    """Writes each rendered line to whatever ``sys.stdout`` is at that moment.
+
+    structlog caches loggers on first use; binding the stream at configure time would
+    keep writing to a replaced (and possibly closed) stream after reconfiguration.
+    """
+
+    def msg(self, message: str) -> None:
+        print(message, file=sys.stdout, flush=True)
+
+    log = debug = info = warning = warn = error = critical = exception = fatal = msg
+
+
+class _StdoutHandler(logging.StreamHandler):  # type: ignore[type-arg]
+    """A stdlib handler that also follows ``sys.stdout`` instead of binding it once."""
+
+    @property
+    def stream(self) -> TextIO:
+        return sys.stdout
+
+    @stream.setter
+    def stream(self, _value: object) -> None:
+        pass
+
+
+def _stdout_logger_factory(*_args: object) -> _StdoutLogger:
+    return _StdoutLogger()
+
+
 def configure_logging(level: str, log_format: str) -> None:
     """Configure structlog and route stdlib logging (uvicorn, arq) through it."""
     numeric_level = logging.getLevelNamesMapping()[level]
@@ -89,7 +118,7 @@ def configure_logging(level: str, log_format: str) -> None:
     structlog.configure(
         processors=processors,
         wrapper_class=structlog.make_filtering_bound_logger(numeric_level),
-        logger_factory=structlog.PrintLoggerFactory(file=sys.stdout),
+        logger_factory=_stdout_logger_factory,
         cache_logger_on_first_use=True,
     )
 
@@ -102,7 +131,7 @@ def configure_logging(level: str, log_format: str) -> None:
             processors[-1],
         ],
     )
-    handler = logging.StreamHandler(sys.stdout)
+    handler = _StdoutHandler()
     handler.setFormatter(formatter)
     root = logging.getLogger()
     root.handlers = [handler]

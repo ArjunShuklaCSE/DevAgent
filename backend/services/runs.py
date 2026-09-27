@@ -251,6 +251,7 @@ class RunService:
         decision: ApprovalDecision,
         comment: str | None,
         diff_sha256: str | None = None,
+        user_id: UUID | None = None,
     ) -> AgentRun:
         """Record a human decision on a run that is awaiting approval (spec 2.7).
 
@@ -279,6 +280,7 @@ class RunService:
             session.add(
                 Approval(
                     run_id=run_id,
+                    user_id=user_id,
                     decision=decision,
                     diff_sha256=run.final_diff_sha256,
                     comment=comment,
@@ -295,7 +297,20 @@ class RunService:
                 StatusChanged(from_status=current, to_status=target, reason=run.status_reason),
             )
         await self._bus.publish(run_id, seq)
+        if target is RunStatus.APPROVED:
+            await self._queue.enqueue_publish(run_id)
         return await self.get(run_id)
+
+    async def retry_publish(self, run_id: UUID) -> AgentRun:
+        """Queue another attempt at opening the PR for a run that is still ``approved``."""
+        run = await self.get(run_id)
+        if run.status is not RunStatus.APPROVED:
+            raise ConflictError(
+                f"Run is {run.status.value}; only approved runs can be published",
+                {"status": run.status.value},
+            )
+        await self._queue.enqueue_publish(run_id)
+        return run
 
 
 async def mark_run_failed(

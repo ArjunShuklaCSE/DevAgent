@@ -48,6 +48,22 @@ class ConflictError(AppError):
     code = "conflict"
 
 
+class UnauthenticatedError(AppError):
+    status_code = HTTPStatus.UNAUTHORIZED
+    code = "unauthenticated"
+
+
+class ExternalServiceError(AppError):
+    """An upstream API (GitHub) failed; ``code`` and status come from the upstream error."""
+
+    def __init__(
+        self, status_code: int, code: str, message: str, details: dict[str, Any] | None = None
+    ) -> None:
+        super().__init__(message, details)
+        self.status_code = status_code
+        self.code = code
+
+
 def error_response(
     status_code: int, code: str, message: str, details: dict[str, Any] | None = None
 ) -> JSONResponse:

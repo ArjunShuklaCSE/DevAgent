@@ -1,15 +1,22 @@
 /**
  * Same-origin proxy to the API service. The browser only ever talks to the web server,
  * so the API needs no CORS and its address can stay on the internal network. Response
- * bodies are streamed through unchanged, which keeps Server-Sent Events live.
+ * bodies are streamed through unchanged, which keeps Server-Sent Events live. Cookies,
+ * redirects and download headers pass through for GitHub sign-in and patch files.
  */
 import type { NextRequest } from "next/server";
 
 export const dynamic = "force-dynamic";
 
 const API_URL = process.env.DEVAGENT_API_INTERNAL_URL ?? "http://localhost:8000";
-const FORWARDED_REQUEST_HEADERS = ["accept", "content-type", "last-event-id"];
-const FORWARDED_RESPONSE_HEADERS = ["content-type", "cache-control", "x-request-id"];
+const FORWARDED_REQUEST_HEADERS = ["accept", "content-type", "last-event-id", "cookie"];
+const FORWARDED_RESPONSE_HEADERS = [
+  "content-type",
+  "cache-control",
+  "x-request-id",
+  "location", // OAuth redirects
+  "content-disposition", // patch downloads
+];
 
 type Context = { params: Promise<{ path: string[] }> };
 
@@ -32,6 +39,7 @@ export async function proxy(request: NextRequest, { params }: Context): Promise<
       headers,
       body: hasBody ? await request.arrayBuffer() : undefined,
       cache: "no-store",
+      redirect: "manual", // pass OAuth redirects to the browser instead of following them
       signal: request.signal, // a closed browser tab closes the upstream SSE stream too
     });
   } catch (error) {
@@ -49,6 +57,8 @@ export async function proxy(request: NextRequest, { params }: Context): Promise<
     const value = upstream.headers.get(name);
     if (value !== null) responseHeaders.set(name, value);
   }
+  for (const cookie of upstream.headers.getSetCookie())
+    responseHeaders.append("set-cookie", cookie);
   if (responseHeaders.get("content-type")?.startsWith("text/event-stream")) {
     responseHeaders.set("cache-control", "no-cache, no-transform");
     responseHeaders.set("x-accel-buffering", "no");

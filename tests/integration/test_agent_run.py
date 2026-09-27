@@ -6,13 +6,16 @@ from ``sample_repos/slugger``, dependencies are installed and tests run in sandb
 containers, and every step, LLM call, tool call and test run is persisted.
 """
 
+import json
 from pathlib import Path
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.config import Settings
+from backend.crypto import generate_key
 from backend.event_bus import InMemoryEventBus
 from backend.services.event_store import SqlEventReader
 from backend.services.recorder import DbRunRecorder
@@ -41,6 +44,7 @@ __all__ = ["docker_client", "sandbox", "session_factory"]  # fixtures
 pytestmark = pytest.mark.integration
 
 ROOT = Path(__file__).parents[2]
+GITHUB_TOKEN = "github_pat_" + "W0rkerT0ken" * 5
 CASSETTE = ROOT / "tests" / "cassettes" / "slugger_fix.yaml"
 ISSUE_BODY = (
     'slugify("") and slugify("!!!") raise IndexError: list index out of range. '
@@ -78,6 +82,17 @@ async def _new_agent_run(factory: async_sessionmaker[AsyncSession]) -> AgentRun:
     return run
 
 
+def _assert_token_absent(workspace: Path, diff: str, tool_calls: list[ToolCallRecord]) -> None:
+    """GitHub credentials stay in the worker process: nothing the agent or the sandbox
+    touched contains the token."""
+    assert workspace.is_dir()
+    for path in workspace.rglob("*"):
+        if path.is_file():
+            assert GITHUB_TOKEN.encode() not in path.read_bytes(), path
+    assert GITHUB_TOKEN not in diff
+    assert all(GITHUB_TOKEN not in (t.output_truncated or "") for t in tool_calls)
+
+
 async def test_scripted_agent_run_fixes_the_sample_bug(
     session_factory: async_sessionmaker[AsyncSession], sandbox: DockerSandbox
 ) -> None:
@@ -90,6 +105,8 @@ async def test_scripted_agent_run_fixes_the_sample_bug(
         llm_pricing_path=str(ROOT / "config" / "model_pricing.yaml"),
         llm_script_path=str(CASSETTE),
         keep_workspaces=True,
+        github_token=SecretStr(GITHUB_TOKEN),
+        secret_key=SecretStr(generate_key()),
     )
     recorder = DbRunRecorder(session_factory, InMemoryEventBus(), run.id)
 
@@ -185,6 +202,8 @@ async def test_scripted_agent_run_fixes_the_sample_bug(
     assert "Fixes #3." in pull_request["body"]
     assert stored.result["validation"]["checks"][1]["status"] == "passed"
 
+    _assert_token_absent(Path(settings.workspace_root) / str(run.id), diff, tool_calls)
+
     page = await SqlEventReader(session_factory).read_after(run.id, 0, 1000)
     assert page is not None
     types = {e.event_type for e in page.events}
@@ -197,3 +216,4 @@ async def test_scripted_agent_run_fixes_the_sample_bug(
         "test_result",
         "command_output",
     } <= types
+    assert all(GITHUB_TOKEN not in json.dumps(e.payload) for e in page.events)

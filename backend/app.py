@@ -18,14 +18,17 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend import __version__
-from backend.api import health, repositories, runs
+from backend.api import auth, health, repositories, runs
 from backend.config import Settings, get_settings
+from backend.crypto import SecretBox
 from backend.errors import register_error_handlers
 from backend.event_bus import EventBus, RedisEventBus
+from backend.github.oauth import GitHubOAuth
 from backend.health import HealthProbe, HealthService, PostgresProbe, RedisProbe
 from backend.logging_setup import configure_logging
 from backend.middleware import RequestContextMiddleware
 from backend.queue import QUEUE_NAME, ArqRunQueue, RunQueue
+from backend.services.auth import AuthService, GitHubFactory, github_factory
 from database.engine import create_engine, create_session_factory
 
 logger = structlog.get_logger(__name__)
@@ -63,9 +66,27 @@ async def default_resources(settings: Settings) -> AsyncIterator[AppResources]:
 
 
 def create_app(
-    settings: Settings | None = None, resource_factory: ResourceFactory = default_resources
+    settings: Settings | None = None,
+    resource_factory: ResourceFactory = default_resources,
+    *,
+    github: GitHubFactory | None = None,
+    oauth: GitHubOAuth | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
+    box = SecretBox(settings.secret_key) if settings.secret_key is not None else None
+    if (
+        oauth is None
+        and box is not None
+        and settings.github_client_id
+        and settings.github_client_secret is not None
+    ):
+        oauth = GitHubOAuth(
+            settings.github_client_id,
+            settings.github_client_secret,
+            f"{settings.public_web_url.rstrip('/')}/api/v1/auth/github/callback",
+            web_url=settings.github_web_url,
+        )
+    github = github or github_factory(settings.github_api_url)
     configure_logging(settings.log_level, settings.log_format)
 
     @asynccontextmanager
@@ -79,6 +100,12 @@ def create_app(
             app.state.run_queue = resources.run_queue
             app.state.sse_keepalive_seconds = settings.sse_keepalive_seconds
             app.state.samples_root = Path(settings.sample_repos_path)
+            app.state.settings = settings
+            app.state.secret_box = box
+            app.state.oauth = oauth
+            app.state.auth_service = AuthService(
+                resources.session_factory, box, github, settings.github_token
+            )
             logger.info("api_started", environment=settings.environment, version=__version__)
             yield
         logger.info("api_stopped")
@@ -100,6 +127,7 @@ def create_app(
     register_error_handlers(app)
     app.include_router(health.router)
     api_v1 = APIRouter(prefix="/api/v1")
+    api_v1.include_router(auth.router)
     api_v1.include_router(repositories.router)
     api_v1.include_router(runs.router)
     app.include_router(api_v1)

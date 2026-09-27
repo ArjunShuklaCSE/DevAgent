@@ -1,10 +1,17 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Query, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
-from backend.api.deps import EventBusDep, RunServiceDep, SessionFactoryDep
+from backend.api.deps import (
+    EventBusDep,
+    RequiredUserDep,
+    RunServiceDep,
+    SessionFactoryDep,
+    require_user,
+)
+from backend.config import Settings
 from backend.errors import AppError, NotFoundError
 from backend.schemas import (
     ApprovalOut,
@@ -13,6 +20,7 @@ from backend.schemas import (
     DiffOut,
     LlmCallOut,
     Page,
+    PullRequestOut,
     RejectRequest,
     RunCreate,
     RunOut,
@@ -27,7 +35,7 @@ from backend.sse import InvalidLastEventIdError, parse_last_event_id, stream_run
 from core.run_status import RunStatus
 from database.models import ApprovalDecision
 
-router = APIRouter(prefix="/runs", tags=["runs"])
+router = APIRouter(prefix="/runs", tags=["runs"], dependencies=[Depends(require_user)])
 
 
 class InvalidLastEventIdAppError(AppError):
@@ -72,18 +80,63 @@ async def cancel_run(
 
 
 @router.post("/{run_id}/approve", response_model=RunOut)
-async def approve_run(run_id: UUID, body: ApprovalRequest, service: RunServiceDep) -> RunOut:
+async def approve_run(
+    run_id: UUID, body: ApprovalRequest, service: RunServiceDep, user: RequiredUserDep
+) -> RunOut:
     """Approve the run's diff. ``diff_sha256`` must match the diff shown for review
-    (409 ``stale_diff`` otherwise)."""
-    run = await service.decide(run_id, ApprovalDecision.APPROVED, body.comment, body.diff_sha256)
+    (409 ``stale_diff`` otherwise). Approval queues the draft PR (or the patch fallback)."""
+    run = await service.decide(
+        run_id,
+        ApprovalDecision.APPROVED,
+        body.comment,
+        body.diff_sha256,
+        user_id=user.id if user is not None else None,
+    )
     return RunOut.model_validate(run)
+
+
+@router.post("/{run_id}/publish", response_model=RunOut)
+async def retry_publish(run_id: UUID, service: RunServiceDep) -> RunOut:
+    """Try opening the draft PR again (after signing in, a rate limit, or fixing access)."""
+    return RunOut.model_validate(await service.retry_publish(run_id))
+
+
+@router.get("/{run_id}/pull-request", response_model=PullRequestOut)
+async def get_pull_request(run_id: UUID, factory: SessionFactoryDep) -> PullRequestOut:
+    return PullRequestOut.model_validate(await RunDetails(factory).pull_request(run_id))
+
+
+@router.get(
+    "/{run_id}/patch",
+    response_class=PlainTextResponse,
+    responses={200: {"content": {"text/x-diff": {}}}},
+)
+async def download_patch(run_id: UUID, factory: SessionFactoryDep, request: Request) -> Response:
+    """The final diff as a ``git am`` patch (the fallback when no PR can be opened)."""
+    settings: Settings = request.app.state.settings
+    filename, patch = await RunDetails(factory).patch(
+        run_id, settings.github_commit_name, settings.github_commit_email
+    )
+    return Response(
+        patch,
+        media_type="text/x-diff; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/{run_id}/reject", response_model=RunOut)
 async def reject_run(
-    run_id: UUID, service: RunServiceDep, body: RejectRequest | None = None
+    run_id: UUID,
+    service: RunServiceDep,
+    user: RequiredUserDep,
+    body: RejectRequest | None = None,
 ) -> RunOut:
-    run = await service.decide(run_id, ApprovalDecision.REJECTED, body.comment if body else None)
+    run = await service.decide(
+        run_id,
+        ApprovalDecision.REJECTED,
+        body.comment if body else None,
+        user_id=user.id if user is not None else None,
+    )
     return RunOut.model_validate(run)
 
 

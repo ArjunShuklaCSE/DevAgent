@@ -83,7 +83,33 @@ class Settings(BaseSettings):
     agent_editor_rounds: int = Field(default=12, ge=1, le=50)
     keep_workspaces: bool = False  # keep run directories after the run for debugging
 
-    @field_validator("anthropic_api_key", "openai_api_key", "llm_model", mode="before")
+    # GitHub (see ADR 0017). OAuth signs the user in; its token (or the fine-grained PAT
+    # below, for single-user setups without an OAuth app) is used to import issues and
+    # open draft PRs after approval. Tokens are Fernet-encrypted at rest with secret_key.
+    secret_key: SecretStr | None = None  # Fernet key; required for sign-in
+    github_client_id: str | None = None
+    github_client_secret: SecretStr | None = None
+    github_token: SecretStr | None = None  # fine-grained PAT fallback for API calls
+    github_api_url: str = "https://api.github.com"
+    github_web_url: str = "https://github.com"
+    github_commit_name: str = "DevAgent"
+    github_commit_email: str = "devagent@users.noreply.github.com"
+    session_max_age_seconds: int = Field(default=7 * 24 * 3600, ge=300)
+
+    @property
+    def github_oauth_enabled(self) -> bool:
+        return bool(self.github_client_id and self.github_client_secret and self.secret_key)
+
+    @field_validator(
+        "anthropic_api_key",
+        "openai_api_key",
+        "llm_model",
+        "secret_key",
+        "github_client_id",
+        "github_client_secret",
+        "github_token",
+        mode="before",
+    )
     @classmethod
     def _empty_is_unset(cls, value: object) -> object:
         # Compose passes unset variables as empty strings.

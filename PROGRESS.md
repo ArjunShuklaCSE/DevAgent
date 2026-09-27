@@ -12,7 +12,7 @@ Build follows the phased plan in the spec (Section 16). Each phase stops for rev
 | 5 | LLM layer, budgets, prompt structure | ✅ Done |
 | 6 | Agent loop | ✅ Done (real-LLM demo pending an API key) |
 | 7 | Frontend dashboard | ✅ Done |
-| 8 | GitHub auth, approval, PR creation | Not started |
+| 8 | GitHub auth, approval, PR creation | ✅ Done (live PR pending a token and test repo) |
 | 9 | Evaluation framework | Not started |
 | 10 | MCP server, hardening, docs, deployment | Not started |
 
@@ -363,4 +363,65 @@ its own draft PR, report and verification.
 - Approval stops at `approved`. Opening the pull request is Phase 8.
 - The evaluation page has no data until Phase 9.
 - Screenshots show a scripted run; a real-model run needs an API key.
+
+## Phase 8: GitHub auth, approval, PR creation (2026-09-27)
+
+### Done
+- GitHub OAuth sign-in (`/api/v1/auth/github/login`, `/callback`, `/me`, `/logout`):
+  - The state is bound to a sealed cookie and the session is a sealed HttpOnly cookie.
+  - Tokens are stored Fernet-encrypted, and deleted on sign-out.
+  - When OAuth is configured, run and repository endpoints require a session (ADR 0017).
+- Issue import: `GET /repositories/{id}/issues` lists open issues, without pull
+  requests. The home page shows them as a picker for GitHub repositories.
+- Approval records the approver and queues the worker's `publish_run` job. The job
+  opens a **draft** PR:
+  - It checks the approved SHA-256, then applies the diff to the base commit's files
+    with `git apply` in a temporary directory.
+  - It builds blobs, a tree, a commit and the `devagent/issue-<n>-<slug>` branch
+    through the Git Data API, so the token never touches a clone or the workspace.
+  - The PR body is the generated description; the commit uses the configured bot
+    identity.
+- Edge cases:
+  - Missing push permission and rate limits (with the reset time) are reported.
+  - If the base branch moved: unrelated upstream changes still get a PR, based on the
+    validated commit and noted in the body; changes to a touched file are refused
+    with `base_moved`.
+  - Branch-name collisions get a `-N` suffix; binary diffs and diffs that do not
+    apply are refused.
+- Patch fallback: `GET /runs/{id}/patch` serves a `git am` patch for any run with a
+  diff. The run stays `approved` with the reason in `result.delivery` (new
+  `creating_pr → approved` transition), and `POST /runs/{id}/publish` retries.
+- Dashboard:
+  - The nav has "Sign in with GitHub", or the avatar and sign-out.
+  - The review page shows the PR link or the patch download with the reason, plus a
+    retry button.
+  - The run page links the PR.
+  - The same-origin proxy now passes cookies, redirects and download headers.
+- Logging: structlog and stdlib handlers write to the current `sys.stdout`, so a
+  reconfigured process never writes to a stale stream.
+
+### Verified (see phase report)
+- Publisher against an in-memory GitHub, with real `git diff` and `git apply`:
+  - The exact approved tree is committed on the base commit; deletions, renames and
+    modes are kept.
+  - A stale hash is refused before any request; no push permission is refused.
+  - Moved base: an unrelated change gets a PR, a conflicting change is refused.
+  - Branch collisions are handled, and a diff that does not apply is refused.
+  - The token only appears in the `Authorization` header, never in logs.
+- With a database:
+  - Sign-in is required when configured, and forged state and open redirects are
+    refused. The stored token is encrypted, and sign-out deletes it.
+  - Approval queues publishing and opens the PR with the user's token. A permission
+    failure falls back to a patch; a retry then succeeds; a second retry gets 409.
+  - With no credentials the run gets a patch.
+- On the deployed stack, approving a sample run delivers a patch that `git apply`
+  accepts on the sample. Browser smoke test: approve, then download the patch.
+- The agent run test checks that a configured GitHub token appears nowhere in the
+  workspace, diff, tool outputs or events.
+
+### Known issues / deferred
+- No PR has been opened on a real repository yet. That needs an OAuth app or a
+  fine-grained PAT, plus a test repository, from Batmxn.
+- Only public repositories can be solved: cloning is anonymous (ADR 0017).
+- The GitHub App installation token is documented, not implemented.
 

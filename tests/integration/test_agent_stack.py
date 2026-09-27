@@ -7,7 +7,10 @@ asks for a model the server cannot use.
 
 import asyncio
 import os
+import shutil
+import tempfile
 from collections.abc import Sequence
+from pathlib import Path
 
 import docker
 import httpx
@@ -17,6 +20,7 @@ from tests.integration.sse_client import iter_sse
 
 pytestmark = pytest.mark.integration
 
+SAMPLES = Path(__file__).parents[2] / "sample_repos"
 API_URL = os.environ.get("DEVAGENT_TEST_API_URL", "http://localhost:8000")
 ISSUE = {
     "title": "slugify crashes on titles without letters",
@@ -107,6 +111,38 @@ async def test_scripted_agent_run_through_the_deployed_stack() -> None:
         assert [(d["decision"], d["diff_sha256"]) for d in decisions] == [
             ("approved", diff["sha256"])
         ]
+
+        await _check_patch_delivery(client, run_id)
+
+
+async def _check_patch_delivery(client: httpx.AsyncClient, run_id: str) -> None:
+    # The worker's publish job: a sample repository has no GitHub remote, so the
+    # approved fix is delivered as a patch that applies to the sample.
+    delivery = None
+    for _ in range(40):
+        delivery = (await client.get(f"/api/v1/runs/{run_id}")).json()["result"].get("delivery")
+        if delivery:
+            break
+        await asyncio.sleep(0.5)
+    assert delivery is not None
+    assert (delivery["kind"], delivery["code"]) == ("patch", "not_a_github_repository")
+    patch = await client.get(f"/api/v1/runs/{run_id}/patch")
+    assert patch.status_code == 200
+    assert "attachment" in patch.headers["content-disposition"]
+    assert await _patch_applies(patch.content)
+
+
+async def _patch_applies(patch: bytes) -> bool:
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp) / "slugger"
+        shutil.copytree(SAMPLES / "slugger", repo, ignore=shutil.ignore_patterns("__pycache__"))
+        (repo / "fix.patch").write_bytes(patch)
+        process = await asyncio.create_subprocess_exec(
+            "git", "apply", "--check", "fix.patch", cwd=repo, stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await process.communicate()
+        assert process.returncode == 0, stderr.decode()
+        return True
 
 
 async def test_run_with_an_unusable_model_fails_clearly() -> None:
