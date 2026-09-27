@@ -412,6 +412,7 @@ export const api = {
 };
 
 export const patchUrl = (id: string) => `/api/v1/runs/${id}/patch`;
+export const traceUrl = (id: string) => `/api/v1/runs/${id}/trace`;
 export const loginUrl = (next: string) =>
   `/api/v1/auth/github/login?next=${encodeURIComponent(next)}`;
 

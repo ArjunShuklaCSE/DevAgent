@@ -1,1 +1,3 @@
-"""MCP server exposing read-only tools and run control. Implemented in Phase 10."""
+"""MCP server exposing DevAgent's read-only code tools and run control."""
+
+__version__ = "0.1.0"

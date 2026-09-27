@@ -180,6 +180,7 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--max-fix-attempts", type=int, help="override the budget (0 disables the debug loop)"
     )
+    run.add_argument("--max-cost", type=str, help="per-case cost limit in USD, e.g. 0.50")
     run.add_argument("--report-dir", type=Path, default=DEFAULT_REPORTS)
 
     report = commands.add_parser("report", help="render a stored run (or list runs)")
@@ -206,7 +207,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print("--repeats and --concurrency must be at least 1")
             return 2
         return asyncio.run(_run(settings, dataset, args))
-    except DatasetError as exc:
+    except (DatasetError, ValueError) as exc:  # ValueError: invalid budget options
         _print(f"error: {exc}")
         return 2
 

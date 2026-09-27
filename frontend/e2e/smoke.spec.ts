@@ -73,6 +73,18 @@ test("a scripted run is followed live, reviewed and approved in the browser", as
   // A sample repository has no GitHub remote: the fix is delivered as a patch file.
   await expect(page.getByText("No pull request was opened")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/local sample repository/)).toBeVisible();
+  // The full trace downloads as JSON.
+  const traceDownload = page.waitForEvent("download");
+  await page.goto(`/runs/${runId}`);
+  await page.getByRole("link", { name: "Export trace" }).click();
+  expect((await traceDownload).suggestedFilename()).toBe(`devagent-run-${runId}.json`);
+  const trace = await request.get(`/api/v1/runs/${runId}/trace`);
+  expect(trace.status()).toBe(200);
+  const traceJson = await trace.json();
+  expect(traceJson.format).toBe("devagent-trace/v1");
+  expect(traceJson.llm_calls.length).toBeGreaterThan(0);
+  await page.goto(`/runs/${runId}/review`);
+
   const download = page.waitForEvent("download");
   await page.getByRole("link", { name: "Download patch" }).click();
   expect((await download).suggestedFilename()).toBe("devagent-issue-3.patch");

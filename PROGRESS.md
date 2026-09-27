@@ -1,6 +1,6 @@
 # Progress
 
-Build follows the phased plan in the spec (Section 16). Each phase stops for review.
+Build follows the phased plan in the spec (Section 16), one stacked pull request per phase.
 
 | Phase | Name | Status |
 |------:|------|--------|
@@ -14,7 +14,7 @@ Build follows the phased plan in the spec (Section 16). Each phase stops for rev
 | 7 | Frontend dashboard | ✅ Done |
 | 8 | GitHub auth, approval, PR creation | ✅ Done (live PR pending a token and test repo) |
 | 9 | Evaluation framework | ✅ Done (real-model numbers pending an API key) |
-| 10 | MCP server, hardening, docs, deployment | Not started |
+| 10 | MCP server, hardening, docs, deployment | ✅ Done (real-model benchmark and live PR pending credentials) |
 
 ## Phase 0: Foundations (2026-09-27)
 
@@ -482,4 +482,46 @@ its own draft PR, report and verification.
 - Only bundled sample repositories can be cases (ADR 0018). There is no SWE-bench
   Lite adapter.
 - Scoring reinstalls dependencies for each case (about 10 s each).
+
+## Phase 10: MCP server, hardening, docs, deployment (2026-09-27)
+
+### Done
+- MCP server (`python -m mcp_server`, `devagent-mcp`; ADR 0019) on the official SDK
+  (`mcp` 2.x), over stdio.
+  - Read-only code tools come from the tool registry, against a git checkout.
+  - Run control goes through the REST API.
+  - There are no approve, reject or publish tools.
+  - API errors come back as tool errors.
+- Trace export: `GET /runs/{id}/trace` returns the whole run as one JSON document
+  (`devagent-trace/v1`), with an **Export trace** button on the run page.
+- Hardening:
+  - File listing no longer writes to `.git/info/exclude`: excludes are passed to
+    `git ls-files`, so reading a checkout changes nothing in it.
+  - `git_diff` is kept out of MCP, because it stages into the index.
+- `devagent eval run --max-cost` (spec 13.2). Invalid budget options are reported, not
+  raised.
+- Docs: `docs/architecture.md` (services, packages, state and sequence diagrams),
+  `docs/security.md` (threat model, controls, known gaps), a full `docs/api.md`,
+  `docs/deployment.md` (single VM with Compose and TLS), "adding a case" in
+  `docs/evaluation.md`, `CONTRIBUTING.md`, and MCP variables in `.env.example`.
+- Public README: rendered banner, badges, screenshots from real runs, Mermaid
+  architecture and state diagrams, quick start, usage (dashboard, API, MCP,
+  benchmark), configuration, security summary, evaluation method, benchmark results
+  taken from the generated report, limitations. Also an MIT `LICENSE` file, which the
+  README already referenced.
+
+### Verified (see phase report)
+- MCP: an in-process client and a real stdio subprocess list and call the tools.
+  Checked: path escapes are refused, the user's `.git` is unchanged after reads, run
+  control sends the right requests, API errors come back as tool errors, and an
+  unreachable API is reported rather than crashing.
+- The trace export is checked in the stack test and the Playwright test.
+- Fresh clone, then `docker compose up`, then the README demo: the full verification
+  ran from a fresh clone of this branch.
+
+### Known issues / deferred
+- No real-model run, real-model benchmark or live PR yet: each needs credentials.
+- The MCP server supports stdio only. Streamable HTTP would need its own
+  authentication.
+- OpenTelemetry spans and the LangGraph adapter are future work (README).
 

@@ -1,9 +1,31 @@
 # Contributing
 
+## Setup
+```bash
+uv sync                                  # Python 3.12 env with dev tools
+uv run pre-commit install
+cd frontend && pnpm install && cd ..
+docker compose up -d --build --wait      # for integration tests and the dashboard
+```
+
 ## Layout and dependency rules
-See the spec's monorepo layout and [ADR 0002](docs/decisions/0002-single-python-project-with-import-contracts.md).
-`tools/`, `sandbox/`, `llm/` must not import `backend/` or `agent/`; `agent/` must not
-import `backend/`. `uv run lint-imports` enforces this.
+See [docs/architecture.md](docs/architecture.md) and
+[ADR 0002](docs/decisions/0002-single-python-project-with-import-contracts.md).
+`tools/`, `sandbox/`, `llm/` and `workspace/` must not import `backend/` or `agent/`;
+`agent/` must not import `backend/`; `core/` imports nothing else from DevAgent.
+`uv run lint-imports` enforces this.
+
+## Tests
+| Command | What it runs |
+| --- | --- |
+| `uv run pytest` | Unit and security tests. No services, no API keys. |
+| `uv run pytest -m integration` | Against real Postgres, Redis and Docker (`docker compose up` first). |
+| `cd frontend && pnpm test` | Vitest component and library tests. |
+| `cd frontend && pnpm test:e2e` | Playwright smoke test against the running stack. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use a local Chromium. |
+| `docker compose exec worker devagent eval validate --gold` | Checks every benchmark case against its reference fix. |
+
+Tests never call a real model. Record a `ScriptedLLM` cassette (`tests/cassettes/`)
+for new agent flows.
 
 ## Quality bar
 - Python: full type hints, `mypy --strict` on every package, ruff lint + format,
@@ -12,7 +34,8 @@ import `backend/`. `uv run lint-imports` enforces this.
 - TypeScript: `strict` + `noUncheckedIndexedAccess`, ESLint with zero warnings, Prettier.
 - Logging: `structlog.get_logger(__name__)`; log events are snake_case names with
   key/value context. Secrets are redacted by a processor, but never log them on purpose.
-- No placeholder logic. Tests use `ScriptedLLM` (Phase 5) instead of live model calls.
+- No placeholder logic. Tests use `ScriptedLLM` instead of live model calls.
+- Numbers shown anywhere (UI, README, reports) come from stored runs, never constants.
 
 ## Database migrations
 ```bash
@@ -29,6 +52,11 @@ throwaway database.
 `uv run pre-commit run --all-files` runs every check CI runs except the build and
 integration jobs.
 
+## Prompts
+Role prompts live in `agent/prompts/<component>/vN.md`. Add a new version file rather
+than editing a released one: every model call records `vN:<sha256 prefix>`, and runs
+and benchmarks are compared by those versions.
+
 ## Decisions
-Record significant choices as `docs/decisions/NNNN-title.md` and update `PROGRESS.md`
-at the end of each phase.
+Record significant choices as `docs/decisions/NNNN-title.md` (context, decision,
+alternatives, consequences) and keep `PROGRESS.md` current.

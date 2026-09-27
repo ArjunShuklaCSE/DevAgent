@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    width: 1280px; height: 400px; overflow: hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #09090b; color: #fafafa;
+    background-image:
+      radial-gradient(circle at 85% -10%, rgba(99, 102, 241, 0.28), transparent 45%),
+      linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+    background-size: auto, 32px 32px, 32px 32px;
+    padding: 64px 72px;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .brand { display: flex; align-items: center; gap: 18px; }
+  .logo {
+    width: 56px; height: 56px; border-radius: 12px; background: #4f46e5;
+    display: grid; place-items: center; font-weight: 700; font-size: 30px;
+  }
+  h1 { font-size: 52px; letter-spacing: -0.02em; }
+  p.tag { margin-top: 18px; font-size: 24px; color: #a1a1aa; max-width: 980px; line-height: 1.4; }
+  .flow { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; }
+  .step { white-space: nowrap; padding: 7px 12px; border-radius: 999px; border: 1px solid #3f3f46; color: #d4d4d8; background: #18181b; }
+  .step.ok { border-color: #059669; color: #6ee7b7; background: rgba(5,150,105,0.12); }
+  .step.human { border-color: #6366f1; color: #c7d2fe; background: rgba(99,102,241,0.15); }
+  .arrow { color: #52525b; }
+</style>
+</head>
+<body>
+  <div>
+    <div class="brand"><div class="logo">D</div><h1>DevAgent</h1></div>
+    <p class="tag">An autonomous GitHub issue solver that reproduces the bug first, fixes it in an
+      isolated Docker sandbox, and opens a draft PR only after a human approves the exact diff.</p>
+  </div>
+  <div class="flow">
+    <span class="step">clone</span><span class="arrow">→</span>
+    <span class="step">localize</span><span class="arrow">→</span>
+    <span class="step">reproduce</span><span class="arrow">→</span>
+    <span class="step">plan</span><span class="arrow">→</span>
+    <span class="step">edit</span><span class="arrow">→</span>
+    <span class="step">test ⟲ debug</span><span class="arrow">→</span>
+    <span class="step ok">validate</span><span class="arrow">→</span>
+    <span class="step human">human approval</span><span class="arrow">→</span>
+    <span class="step">draft PR</span>
+  </div>
+</body>
+</html>

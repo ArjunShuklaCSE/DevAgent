@@ -59,9 +59,15 @@ def ensure_workspace_excludes(root: Path) -> None:
 
 
 async def list_files(root: Path) -> list[str]:
-    """Tracked and untracked files, honouring ``.gitignore`` (spec 5, list_tree)."""
-    await asyncio.to_thread(ensure_workspace_excludes, root)
-    out = await git(root, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
+    """Tracked and untracked files, honouring ``.gitignore`` (spec 5, list_tree).
+
+    Read-only: toolchain artifacts are excluded on the command line, so listing never
+    writes to ``.git`` (the MCP server lists a developer's own checkout).
+    """
+    excludes = [f"--exclude={pattern}" for pattern in WORKSPACE_EXCLUDES]
+    out = await git(
+        root, ["ls-files", "-z", "--cached", "--others", "--exclude-standard", *excludes]
+    )
     return sorted({p for p in out.split("\x00") if p and (root / p).is_file()})
 
 
