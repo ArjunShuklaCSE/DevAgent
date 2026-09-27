@@ -375,6 +375,10 @@ class DockerSandbox:
         writable_env = profile == "install"
         return [
             self._mount(workspace.repo, CONTAINER_WORKSPACE, read_only=False),
+            # Mask the real .git with an empty read-only tmpfs. The worker runs git on
+            # this repository; if sandboxed code could write .git/config it could add
+            # a filter or hook that git on the worker would execute.
+            Mount(target=f"{CONTAINER_WORKSPACE}/.git", source=None, type="tmpfs", read_only=True),
             self._mount(workspace.env, CONTAINER_ENV, read_only=not writable_env),
             self._mount(workspace.reports, CONTAINER_REPORTS, read_only=False),
         ]

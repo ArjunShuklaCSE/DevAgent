@@ -28,6 +28,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.events import EventType
 from core.run_status import RunStatus
+from core.tools import CallStatus, ChangeType, ToolCapability
 from database.base import Base, IdMixin, TimestampMixin
 
 
@@ -71,24 +72,6 @@ class StepStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     SKIPPED = "skipped"
-
-
-class ToolCapability(StrEnum):
-    READ = "read"
-    WRITE_WORKSPACE = "write_workspace"
-    EXECUTE_SANDBOX = "execute_sandbox"
-
-
-class CallStatus(StrEnum):
-    OK = "ok"
-    ERROR = "error"
-    DENIED = "denied"
-
-
-class ChangeType(StrEnum):
-    CREATE = "create"
-    MODIFY = "modify"
-    DELETE = "delete"
 
 
 class TestRunKind(StrEnum):

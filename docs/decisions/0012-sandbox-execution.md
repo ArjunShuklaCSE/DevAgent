@@ -30,7 +30,8 @@ The environment is built from scratch (PATH, HOME=/tmp, LANG, Python and pip fla
 nothing from the worker leaks in.
 
 **Filesystem layout per run** (on the worker, under `DEVAGENT_WORKSPACE_ROOT/<run>/`):
-- `repo/` is mounted read-write at `/workspace`;
+- `repo/` is mounted read-write at `/workspace`, with its `.git` masked by an empty
+  read-only tmpfs (added in Phase 4, see ADR 0013);
 - `env/` is the run's virtualenv (`--system-site-packages`, so the image's pinned tools
   stay available). It is mounted at `/env`, writable only during install;
 - `reports/` is mounted at `/reports` for JUnit files.
