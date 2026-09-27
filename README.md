@@ -172,8 +172,11 @@ Then open **http://localhost:3000**.
 To see a complete run without any API key:
 
 1. On the home page, keep **Bundled sample** selected and choose **slugger**.
-2. Set **Issue title** to *slugify crashes on titles without letters* and **Issue #**
-   to 3. Open **Model and budget** and type `scripted` as the model.
+2. Set **Issue title** to *slugify crashes on titles without letters*, **Issue #** to 3
+   and **Issue body** to
+   `slugify("") and slugify("!!!") raise IndexError: list index out of range.`
+   Open **Model and budget** and type `scripted` as the model. (The recorded session
+   replays only for this issue, so keep the text as given.)
 3. Click **Start run** and watch it live. It reproduces the bug, makes a wrong first
    fix, debugs, fixes it, and stops at **Awaiting approval**.
 4. Click **Review and approve**, approve, and download the patch. A sample has no
@@ -203,7 +206,7 @@ otherwise it offers the patch.
 REPO=$(curl -s -X POST localhost:8000/api/v1/repositories \
   -H 'content-type: application/json' -d '{"sample":"slugger"}' | jq -r .id)
 RUN=$(curl -s -X POST localhost:8000/api/v1/runs -H 'content-type: application/json' \
-  -d "{\"repository_id\":\"$REPO\",\"model\":\"scripted\",\"issue\":{\"number\":3,\"title\":\"slugify crashes on titles without letters\"}}" \
+  -d "{\"repository_id\":\"$REPO\",\"model\":\"scripted\",\"issue\":{\"number\":3,\"title\":\"slugify crashes on titles without letters\",\"body\":\"slugify raises IndexError: list index out of range.\"}}" \
   | jq -r .id)
 curl -N localhost:8000/api/v1/runs/$RUN/events          # live SSE stream
 curl -s localhost:8000/api/v1/runs/$RUN/trace -o trace.json

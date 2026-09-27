@@ -136,3 +136,21 @@ test("an unknown run shows an error state, not a blank page", async ({ page }) =
     page.getByRole("alert").filter({ hasText: "Could not load this run" }),
   ).toContainText("not found");
 });
+
+test("the README quick start works through the home-page form", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Sample repository").selectOption("slugger");
+  await page.getByLabel("Issue title").fill(ISSUE.title);
+  await page.getByLabel("Issue #").fill(String(ISSUE.number));
+  await page
+    .getByLabel("Issue body")
+    .fill('slugify("") and slugify("!!!") raise IndexError: list index out of range.');
+  await page.getByText("Model and budget").click();
+  await page.getByLabel("Model", { exact: true }).fill("scripted");
+  await page.getByRole("button", { name: "Start run" }).click();
+
+  await expect(page).toHaveURL(/\/runs\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole("heading", { name: ISSUE.title })).toBeVisible();
+  await expect(page.getByText("Awaiting approval").first()).toBeVisible({ timeout: 240_000 });
+  await expect(page.getByRole("link", { name: "Review and approve" })).toBeVisible();
+});
