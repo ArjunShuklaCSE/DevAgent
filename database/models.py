@@ -218,6 +218,7 @@ class AgentRun(IdMixin, TimestampMixin, Base):
     finished_at: Mapped[datetime | None]
 
     issue: Mapped[Issue] = relationship(lazy="raise")
+    repository: Mapped[Repository] = relationship(lazy="raise")
     steps: Mapped[list["AgentStep"]] = relationship(
         back_populates="run", order_by="AgentStep.sequence", cascade="all, delete-orphan"
     )

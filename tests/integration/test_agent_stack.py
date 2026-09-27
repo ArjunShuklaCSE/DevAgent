@@ -73,6 +73,41 @@ async def test_scripted_agent_run_through_the_deployed_stack() -> None:
         assert not any(s["synthetic"] for s in steps)
         assert steps[-1]["state"] == "validating"
 
+        # Everything the run detail and review pages read.
+        diff = (await client.get(f"/api/v1/runs/{run_id}/diff")).json()
+        assert diff["sha256"] == run["final_diff_sha256"]
+        assert "slugger/slug.py" in diff["diff"]
+        assert diff["validation"]["checks"][0]["name"] == "reproduction"
+        tools = (await client.get(f"/api/v1/runs/{run_id}/tool-calls")).json()
+        assert {t["tool_name"] for t in tools} >= {"search_text", "edit_file", "create_file"}
+        llm = (await client.get(f"/api/v1/runs/{run_id}/llm-calls")).json()
+        assert len(llm) == 14
+        assert all(c["prompt_version"].startswith("v1:") for c in llm)
+        tests = (await client.get(f"/api/v1/runs/{run_id}/test-runs")).json()
+        assert tests[1]["kind"] == "reproduction"
+        assert {r["outcome"] for r in tests[1]["results"]} == {"failed"}
+        listing = (await client.get("/api/v1/runs", params={"limit": 5})).json()
+        summary = next(r for r in listing["items"] if r["id"] == run_id)
+        assert summary["repository"]["name"] == "slugger"
+        assert summary["issue"]["number"] == 3
+
+        # Approval is bound to the reviewed diff.
+        stale = await client.post(f"/api/v1/runs/{run_id}/approve", json={"diff_sha256": "0" * 64})
+        assert stale.status_code == 409
+        assert stale.json()["error"]["code"] == "stale_diff"
+        approved = await client.post(
+            f"/api/v1/runs/{run_id}/approve",
+            json={"diff_sha256": diff["sha256"], "comment": "looks right"},
+        )
+        assert approved.status_code == 200, approved.text
+        assert approved.json()["status"] == "approved"
+        again = await client.post(f"/api/v1/runs/{run_id}/reject", json={})
+        assert again.status_code == 409
+        decisions = (await client.get(f"/api/v1/runs/{run_id}/approvals")).json()
+        assert [(d["decision"], d["diff_sha256"]) for d in decisions] == [
+            ("approved", diff["sha256"])
+        ]
+
 
 async def test_run_with_an_unusable_model_fails_clearly() -> None:
     async with httpx.AsyncClient(base_url=API_URL, timeout=httpx.Timeout(60)) as client:
@@ -116,7 +151,14 @@ async def test_cancel_stops_the_worker_and_its_sandbox_containers() -> None:
         finally:
             docker_client.close()
         assert remaining == []
-        steps = (await client.get(f"/api/v1/runs/{run_id}/steps")).json()
-        assert all(s["status"] != "running" for s in steps)
+        # The worker closes the open step after it has killed the containers.
+        open_steps: list[str] = []
+        for _ in range(20):
+            steps = (await client.get(f"/api/v1/runs/{run_id}/steps")).json()
+            open_steps = [s["state"] for s in steps if s["status"] == "running"]
+            if not open_steps:
+                break
+            await asyncio.sleep(0.5)
+        assert open_steps == []
         run = (await client.get(f"/api/v1/runs/{run_id}")).json()
         assert run["status"] == "cancelled"

@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from backend.errors import ConflictError, NotFoundError
+from backend.errors import AppError, ConflictError, NotFoundError
 from backend.event_bus import EventBus
 from backend.queue import RunQueue
 from backend.schemas import RepositoryCreate, RunCreate
@@ -22,6 +22,8 @@ from core.run_status import InvalidTransitionError, RunStatus, ensure_transition
 from database.models import (
     AgentRun,
     AgentStep,
+    Approval,
+    ApprovalDecision,
     Issue,
     IssueSource,
     Repository,
@@ -32,6 +34,11 @@ from database.models import (
 logger = structlog.get_logger(__name__)
 
 SAMPLE_OWNER = "sample"
+
+
+class StaleDiffError(AppError):
+    status_code = 409
+    code = "stale_diff"
 
 
 @dataclass(frozen=True)
@@ -161,7 +168,9 @@ class RunService:
     async def get(self, run_id: UUID) -> AgentRun:
         async with self._session_factory() as session:
             run = await session.scalar(
-                select(AgentRun).where(AgentRun.id == run_id).options(selectinload(AgentRun.issue))
+                select(AgentRun)
+                .where(AgentRun.id == run_id)
+                .options(selectinload(AgentRun.issue), selectinload(AgentRun.repository))
             )
             if run is None:
                 raise NotFoundError("Run not found", {"run_id": str(run_id)})
@@ -187,6 +196,7 @@ class RunService:
             rows = await session.scalars(
                 select(AgentRun)
                 .where(*conditions)
+                .options(selectinload(AgentRun.issue), selectinload(AgentRun.repository))
                 .order_by(AgentRun.created_at.desc())
                 .limit(limit)
                 .offset(offset)
@@ -231,6 +241,58 @@ class RunService:
                     reason=run.status_reason,
                     synthetic=run.mode is RunMode.DRY_RUN,
                 ),
+            )
+        await self._bus.publish(run_id, seq)
+        return await self.get(run_id)
+
+    async def decide(
+        self,
+        run_id: UUID,
+        decision: ApprovalDecision,
+        comment: str | None,
+        diff_sha256: str | None = None,
+    ) -> AgentRun:
+        """Record a human decision on a run that is awaiting approval (spec 2.7).
+
+        Approval is bound to the exact diff: ``diff_sha256`` must equal the run's final
+        diff hash, so a reviewer can never approve a diff they did not see.
+        """
+        target = RunStatus.APPROVED if decision is ApprovalDecision.APPROVED else RunStatus.REJECTED
+        async with self._session_factory() as session, session.begin():
+            run = await session.scalar(
+                select(AgentRun).where(AgentRun.id == run_id).with_for_update()
+            )
+            if run is None:
+                raise NotFoundError("Run not found", {"run_id": str(run_id)})
+            current = run.status
+            if current is not RunStatus.AWAITING_APPROVAL:
+                raise ConflictError(
+                    f"Run is {current.value}, not awaiting approval", {"status": current.value}
+                )
+            if run.final_diff_sha256 is None:
+                raise ConflictError("Run has no diff to review", {})
+            if diff_sha256 is not None and diff_sha256 != run.final_diff_sha256:
+                raise StaleDiffError(
+                    "The diff changed since it was reviewed; reload and review it again",
+                    {"expected": run.final_diff_sha256, "received": diff_sha256},
+                )
+            session.add(
+                Approval(
+                    run_id=run_id,
+                    decision=decision,
+                    diff_sha256=run.final_diff_sha256,
+                    comment=comment,
+                )
+            )
+            reason = f"{decision.value} by reviewer" + (f": {comment}" if comment else "")
+            run.status = target
+            run.status_reason = reason[:2000]
+            if is_terminal(target):
+                run.finished_at = datetime.now(UTC)
+            seq = await append_event(
+                session,
+                run_id,
+                StatusChanged(from_status=current, to_status=target, reason=run.status_reason),
             )
         await self._bus.publish(run_id, seq)
         return await self.get(run_id)
