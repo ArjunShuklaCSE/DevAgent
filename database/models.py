@@ -475,5 +475,7 @@ class EvalResult(IdMixin, TimestampMixin, Base):
     failure_category: Mapped[FailureCategory | None] = mapped_column(
         _enum(FailureCategory, "failure_category")
     )
+    # Per-test outcomes, adversarial checks and scoring errors (for the report drill-down).
+    details: Mapped[dict[str, Any]] = mapped_column(default=dict, server_default="{}")
 
     __table_args__ = (UniqueConstraint("eval_run_id", "eval_case_id", "repeat_index"),)

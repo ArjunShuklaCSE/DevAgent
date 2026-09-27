@@ -78,7 +78,7 @@ test("a scripted run is followed live, reviewed and approved in the browser", as
   expect((await download).suggestedFilename()).toBe("devagent-issue-3.patch");
   await shot(page, "review-approved");
 
-  // History and the evaluation placeholder.
+  // History.
   await page.goto("/runs");
   await expect(page.getByRole("heading", { name: "Runs" })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: ISSUE.title }).first()).toBeVisible();
@@ -86,8 +86,6 @@ test("a scripted run is followed live, reviewed and approved in the browser", as
   await page.goto("/");
   await expect(page.getByText("All systems operational")).toBeVisible();
   await shot(page, "home");
-  await page.goto("/evaluation");
-  await expect(page.getByText("No data yet")).toBeVisible();
 
   // Light theme toggle persists across navigation.
   await page.goto(`/runs/${runId}`);
@@ -97,6 +95,27 @@ test("a scripted run is followed live, reviewed and approved in the browser", as
   await expect(page.locator("html")).not.toHaveClass(/dark/);
   await expect(page.getByRole("heading", { name: ISSUE.title })).toBeVisible();
   await shot(page, "run-detail-light");
+});
+
+test("the evaluation page shows stored benchmark results, or says there are none", async ({
+  page,
+  request,
+}) => {
+  const runs = await request.get("/api/v1/evaluation/runs");
+  expect(runs.status()).toBe(200);
+  const stored: { id: string; label: string | null }[] = await runs.json();
+  await page.goto("/evaluation");
+  await expect(page.getByRole("heading", { name: "Evaluation" })).toBeVisible();
+  if (stored.length === 0) {
+    await expect(page.getByText("No data yet")).toBeVisible();
+    return;
+  }
+  await expect(page.getByRole("heading", { name: "Evaluation runs" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Cases \(/ })).toBeVisible();
+  // Each case links to the agent run's full trace.
+  const traceLink = page.locator('a[href^="/runs/"]').first();
+  await expect(traceLink).toBeVisible();
+  await shot(page, "evaluation");
 });
 
 test("an unknown run shows an error state, not a blank page", async ({ page }) => {

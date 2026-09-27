@@ -41,6 +41,9 @@ dev = [
     "types-pyyaml>=6.0.12.20260906",
 ]
 
+[project.scripts]
+devagent = "evaluation.cli:main"
+
 [build-system]
 requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
@@ -63,7 +66,7 @@ packages = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-extend-exclude = ["frontend", "sample_repos"]
+extend-exclude = ["frontend", "sample_repos", "evaluation/datasets"]
 # Apply the excludes even when files are passed explicitly (pre-commit does that);
 # sample repos contain deliberate bugs and must stay byte-for-byte as written.
 force-exclude = true
@@ -100,6 +103,8 @@ files = [
     "core", "workspace", "backend", "agent", "tools", "sandbox", "llm",
     "evaluation", "database", "mcp_server", "tests",
 ]
+# Hidden tests are fixture code for the sample repositories, like sample_repos/.
+exclude = ["^evaluation/datasets/"]
 
 [tool.pydantic-mypy]
 init_forbid_extra = true
@@ -150,3 +155,9 @@ name = "Database models do not import application layers"
 type = "forbidden"
 source_modules = ["database"]
 forbidden_modules = ["backend", "agent", "tools", "sandbox", "llm", "evaluation", "mcp_server"]
+
+[[tool.importlinter.contracts]]
+name = "Evaluation read models (served by the API) do not import the web layer or the agent"
+type = "forbidden"
+source_modules = ["evaluation.metrics", "evaluation.stats", "evaluation.report"]
+forbidden_modules = ["backend", "agent", "sandbox", "llm", "tools"]

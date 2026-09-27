@@ -1,0 +1,14 @@
+diff --git a/src/textchunk/chunking.py b/src/textchunk/chunking.py
+index 759f81f..ed197e5 100644
+--- a/src/textchunk/chunking.py
++++ b/src/textchunk/chunking.py
+@@ -13,8 +13,7 @@ def chunk(items: Sequence[T], size: int) -> list[list[T]]:
+     """
+     if size <= 0:
+         raise ValueError("size must be positive")
+-    count = len(items) // size
+-    return [list(items[i * size : (i + 1) * size]) for i in range(count)]
++    return [list(items[i : i + size]) for i in range(0, len(items), size)]
+ 
+ 
+ def sliding_windows(items: Sequence[T], width: int) -> list[list[T]]:

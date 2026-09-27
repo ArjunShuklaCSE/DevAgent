@@ -1,0 +1,15 @@
+diff --git a/tzconvert/timestamps.py b/tzconvert/timestamps.py
+index 31aec7f..ca87dfc 100644
+--- a/tzconvert/timestamps.py
++++ b/tzconvert/timestamps.py
+@@ -9,7 +9,9 @@ def parse_iso(value: str) -> datetime:
+     Naive timestamps are assumed to already be UTC.
+     """
+     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+-    return parsed.replace(tzinfo=timezone.utc)
++    if parsed.tzinfo is None:
++        return parsed.replace(tzinfo=timezone.utc)
++    return parsed.astimezone(timezone.utc)
+ 
+ 
+ def to_epoch(value: str) -> int:

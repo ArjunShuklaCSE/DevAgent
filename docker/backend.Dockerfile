@@ -65,6 +65,10 @@ COPY config ./config
 # sample repositories can be registered as run sources.
 COPY agent/prompts ./agent/prompts
 COPY sample_repos ./sample_repos
+# Benchmark datasets (hidden tests and gold patches) for `devagent eval`, run in the
+# worker. They are outside sample_repos/, which is all an agent run can see.
+COPY evaluation/datasets ./evaluation/datasets
+RUN mkdir -p evaluation/reports && chown devagent:devagent evaluation/reports
 USER devagent
 EXPOSE 8000
 CMD ["uvicorn", "backend.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
