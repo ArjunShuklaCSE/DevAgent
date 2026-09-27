@@ -8,7 +8,7 @@ Build follows the phased plan in the spec (Section 16). Each phase stops for rev
 | 1 | Data model, run API, live events | ✅ Done |
 | 2 | Safe cloning & repository analysis | ✅ Done |
 | 3 | Docker sandbox | ✅ Done |
-| 4 | Tools | Not started |
+| 4 | Tools | ✅ Done |
 | 5 | LLM layer, budgets, prompt structure | Not started |
 | 6 | Agent loop | Not started |
 | 7 | Frontend dashboard | Not started |
@@ -172,6 +172,46 @@ its own draft PR, report and verification.
   proxy, so the local `.env` sets `DEVAGENT_SANDBOX_INSTALL_NETWORK=host`. CI and normal
   hosts use `bridge`.
 
+## Phase 4: Tools (2026-09-27)
+
+### Done
+- `tools/`: `ToolRegistry` plus the 11 tools from spec 5: `list_tree`, `search_files`,
+  `search_text` (ripgrep), `find_symbol`, `find_references` (ast), `read_file`,
+  `edit_file`, `create_file`, `run_command`, `run_tests`, `git_diff`. Each has a
+  Pydantic input model, JSON schema, capability tag and output limit (ADR 0013).
+- The registry returns structured errors (`ok` / `error` / `denied` + stable code) for
+  unknown tools, bad arguments, path and policy denials, and tool failures, and logs
+  every call through a `ToolCallSink`.
+- `backend/services/tool_log.py`: `DbToolCallSink` writes `tool_calls` and
+  `code_changes`, stores full output when it was truncated, and emits `tool_call` events.
+- Path safety: traversal, absolute paths, NUL, symlink escapes and writes through
+  symlinks are rejected. `.git/` is blocked. CI config and lockfiles are protected
+  unless the plan names them. Dependency and build files are flagged as sensitive.
+- `core/tools.py`: tool enums moved into the dependency-free kernel.
+- `ripgrep==14.1.0` wheel pinned as a dependency, so `rg` ships in the image.
+- **Security fix:** the sandbox now masks `/workspace/.git` with an empty read-only
+  tmpfs. Without it, sandboxed code could write `.git/config` (for example a filter
+  driver) that host-side git would execute.
+
+### Verified (see phase report)
+- 27 unit tests covering every tool: ambiguous and missing edit rejection, traversal
+  and symlink escape rejection, protected, blocked and sensitive paths,
+  `.gitignore`-aware listing, capped search and invalid regex, ast definitions and
+  references, and a diff with new files and no toolchain noise.
+- Postgres integration: tool calls (including denied ones), code changes, full-output
+  refs and `tool_call` events are persisted.
+- Real sandbox: shell and escape attempts through `run_command` are denied with codes.
+  Shell metacharacters reach `ls` as literal arguments. `run_tests` finds a real
+  failing test, then the reproduction test, then all green after an `edit_file` fix.
+
+### Known issues / deferred
+- The spec 6.1 workspace-size check between steps runs in the orchestrator (Phase 6),
+  using `workspace.limits`.
+- Repositories whose tests need git metadata (e.g. `setuptools_scm`) see an empty `.git`
+  in the sandbox.
+- `find_references` is name-based (no type inference), so it can over-report.
+
 ## Next
-Phase 4: tool registry and tools (file read/search/edit with path safety, test and
-command tools through the sandbox, diff), logged to `tool_calls` and `code_changes`.
+Phase 5: LLM layer (`LLMClient`, provider adapter, `ScriptedLLM`, cost accounting from
+`config/model_pricing.yaml`, budgets, versioned prompts, untrusted-content wrapping,
+structured-output validation with bounded retries).

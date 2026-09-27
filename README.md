@@ -4,8 +4,8 @@ Autonomous GitHub issue solver: give it a Python repository and an issue; it loc
 the code, reproduces the bug with a failing test, plans and applies a fix, validates it
 in an isolated Docker sandbox, and opens a **draft** PR only after you approve the exact diff.
 
-> **Status: Phase 3 of 10.** Services, data model, run API, live events, safe cloning,
-> repository analysis and the Docker sandbox work; the agent loop is not built yet, so
+> **Status: Phase 4 of 10.** Services, data model, run API, live events, safe cloning,
+> repository analysis, the Docker sandbox and the agent's tools work; the agent loop is not built yet, so
 > runs are synthetic dry runs. See [PROGRESS.md](PROGRESS.md).
 
 ## Quick start

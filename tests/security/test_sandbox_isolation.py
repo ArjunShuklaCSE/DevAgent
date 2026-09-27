@@ -102,6 +102,30 @@ async def test_unprivileged_and_read_only(sandbox: DockerSandbox, workspace: Run
     assert "docker.sock False" in out
 
 
+async def test_git_metadata_is_hidden_from_the_sandbox(
+    sandbox: DockerSandbox, workspace: RunWorkspace
+) -> None:
+    git_dir = workspace.repo / ".git"
+    git_dir.mkdir()
+    (git_dir / "config").write_text("[core]\n\tbare = false\n")
+    result = await run_probe(
+        sandbox,
+        workspace,
+        "import os, pathlib\n"
+        "print('listing', sorted(os.listdir('/workspace/.git')))\n"
+        "try:\n"
+        "    config = pathlib.Path('/workspace/.git/config')\n"
+        "    config.write_text('[filter \"x\"]\\n\\tclean = id\\n')\n"
+        "    print('wrote config')\n"
+        "except OSError as exc:\n"
+        "    print('denied', exc.errno)\n",
+    )
+    assert result.exit_code == 0, result.stderr
+    assert "listing []" in result.stdout
+    assert "denied" in result.stdout
+    assert (git_dir / "config").read_text() == "[core]\n\tbare = false\n"
+
+
 async def test_timeout_kills_the_command(sandbox: DockerSandbox, workspace: RunWorkspace) -> None:
     started = time.monotonic()
     result = await run_probe(
