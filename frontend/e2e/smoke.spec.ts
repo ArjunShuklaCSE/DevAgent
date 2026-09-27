@@ -146,7 +146,7 @@ test("the README quick start works through the home-page form", async ({ page })
     .getByLabel("Issue body")
     .fill('slugify("") and slugify("!!!") raise IndexError: list index out of range.');
   await page.getByText("Model and budget").click();
-  await page.getByLabel("Model", { exact: true }).fill("scripted");
+  await page.getByRole("textbox", { name: /^Model/ }).fill("scripted");
   await page.getByRole("button", { name: "Start run" }).click();
 
   await expect(page).toHaveURL(/\/runs\/[0-9a-f-]{36}$/);
