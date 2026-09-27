@@ -73,6 +73,18 @@ test("a scripted run is followed live, reviewed and approved in the browser", as
   // A sample repository has no GitHub remote: the fix is delivered as a patch file.
   await expect(page.getByText("No pull request was opened")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/local sample repository/)).toBeVisible();
+  // The full trace downloads as JSON.
+  const traceDownload = page.waitForEvent("download");
+  await page.goto(`/runs/${runId}`);
+  await page.getByRole("link", { name: "Export trace" }).click();
+  expect((await traceDownload).suggestedFilename()).toBe(`devagent-run-${runId}.json`);
+  const trace = await request.get(`/api/v1/runs/${runId}/trace`);
+  expect(trace.status()).toBe(200);
+  const traceJson = await trace.json();
+  expect(traceJson.format).toBe("devagent-trace/v1");
+  expect(traceJson.llm_calls.length).toBeGreaterThan(0);
+  await page.goto(`/runs/${runId}/review`);
+
   const download = page.waitForEvent("download");
   await page.getByRole("link", { name: "Download patch" }).click();
   expect((await download).suggestedFilename()).toBe("devagent-issue-3.patch");
@@ -123,4 +135,22 @@ test("an unknown run shows an error state, not a blank page", async ({ page }) =
   await expect(
     page.getByRole("alert").filter({ hasText: "Could not load this run" }),
   ).toContainText("not found");
+});
+
+test("the README quick start works through the home-page form", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Sample repository").selectOption("slugger");
+  await page.getByLabel("Issue title").fill(ISSUE.title);
+  await page.getByLabel("Issue #").fill(String(ISSUE.number));
+  await page
+    .getByLabel("Issue body")
+    .fill('slugify("") and slugify("!!!") raise IndexError: list index out of range.');
+  await page.getByText("Model and budget").click();
+  await page.getByRole("textbox", { name: /^Model/ }).fill("scripted");
+  await page.getByRole("button", { name: "Start run" }).click();
+
+  await expect(page).toHaveURL(/\/runs\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole("heading", { name: ISSUE.title })).toBeVisible();
+  await expect(page.getByText("Awaiting approval").first()).toBeVisible({ timeout: 240_000 });
+  await expect(page.getByRole("link", { name: "Review and approve" })).toBeVisible();
 });

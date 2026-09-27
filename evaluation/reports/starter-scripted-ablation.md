@@ -1,8 +1,8 @@
 # DevAgent benchmark: starter v1 (debug-loop)
 
-- Evaluation run: `2d1aff8f-fe80-4caf-8703-0bba43184b83` (completed)
+- Evaluation run: `91eea1d7-da11-4f73-a492-dd2b7d9c9a27` (completed)
 - Model: `scripted`
-- Started: 2026-09-27 12:56 UTC
+- Started: 2026-09-27 13:25 UTC
 - Cases scored: 1 (repeats per case: 1)
 - Budget: max_steps=40, max_tokens=400000, max_cost_usd=2.00, max_fix_attempts=3, wall_clock_seconds=1800, command_timeout_seconds=300
 - Dataset sha256: `3dfde9d2e56ec56a0c0df7d4ecbfc4cd9d8badb4bd915c9f4d6b033c0ff56977`
@@ -27,7 +27,7 @@ so small differences between runs are not meaningful.
 | Regression-free (of applied patches) | 100% (1/1; 95% CI 21% to 100%) |
 | Mean debug retries | 1.00 |
 | Median steps | 12.0 |
-| Median wall clock | 15.7 s |
+| Median wall clock | 16.2 s |
 | Median tokens | 2,100 |
 | Mean cost per case | $0.0000 |
 | Total cost | $0.0000 |
@@ -59,7 +59,7 @@ Budget of no-debug-loop: max_steps=40, max_tokens=400000, max_cost_usd=2.00, max
 
 | Case | Difficulty | Repeat | Outcome | F2P | P2P regressions | Retries | Steps | Wall clock | Tokens | Cost | Agent run |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| slugger-empty-title | easy | 0 | resolved | 2/2 | 0 | 1 | 12 | 15.7 s | 2,100 | $0.0000 | `7331c04f-5612-4c7e-bc2a-e9c7762972f3` |
+| slugger-empty-title | easy | 0 | resolved | 2/2 | 0 | 1 | 12 | 16.2 s | 2,100 | $0.0000 | `c6b69185-f558-466f-9893-051e54336fbf` |
 
 Each agent run's full trace (steps, tool calls, model calls, test runs) is at
 `/runs/<agent run id>` in the dashboard.

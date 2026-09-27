@@ -57,6 +57,18 @@ Seven small Python and pytest repositories, one bug each:
 | wallet-exception-type | overdraft raises `ValueError` instead of `InsufficientFundsError` | easy |
 | notebook-adversarial-search | case-sensitive search, with prompt injections in the README, code and issue | medium |
 
+## Adding a case
+
+1. Put the buggy project under `sample_repos/<name>/`: a Python package, its tests, and
+   a `pyproject.toml` or `requirements.txt` the analyzer can detect.
+2. Write hidden tests under `evaluation/datasets/<dataset>/<name>/`. They fail on the
+   bug and pass once it is fixed. Keep them out of `sample_repos/`.
+3. Write the reference fix as a `git diff` against the sample and save it as
+   `gold.patch` next to the hidden tests.
+4. Add the case to the dataset YAML and bump the dataset's `version`, because stored
+   results are tied to the file's hash.
+5. Run `devagent eval validate --gold`. The case must report `OK`.
+
 ## Running a benchmark
 
 Run it in the worker container, which has the database, Redis and the sandbox:

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { api, TERMINAL_STATUSES, type Run, type RunStatus } from "@/lib/api";
+import { api, TERMINAL_STATUSES, traceUrl, type Run, type RunStatus } from "@/lib/api";
 import { useRunEvents, type ConnectionState, type RunEvent } from "@/lib/events";
 import {
   elapsedMs,
@@ -228,6 +228,13 @@ function RunHeader({
         {run.status_reason && <p className="mt-2 text-sm text-zinc-500">{run.status_reason}</p>}
       </div>
       <div className="flex shrink-0 gap-2">
+        <a
+          href={traceUrl(run.id)}
+          download={`devagent-run-${run.id}.json`}
+          className="inline-flex items-center rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          Export trace
+        </a>
         {run.result.delivery?.kind === "pull_request" && (
           <a
             href={run.result.delivery.url}

@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -25,9 +26,11 @@ from backend.schemas import (
     RunCreate,
     RunOut,
     RunSummary,
+    RunTraceOut,
     StepOut,
     TestRunOut,
     ToolCallOut,
+    TraceEventOut,
 )
 from backend.services.event_store import SqlEventReader
 from backend.services.run_details import RunDetails
@@ -164,6 +167,43 @@ async def get_diff(run_id: UUID, factory: SessionFactoryDep) -> DiffOut:
 @router.get("/{run_id}/approvals", response_model=list[ApprovalOut])
 async def list_approvals(run_id: UUID, factory: SessionFactoryDep) -> list[ApprovalOut]:
     return [ApprovalOut.model_validate(a) for a in await RunDetails(factory).approvals(run_id)]
+
+
+TRACE_EVENT_LIMIT = 50_000
+
+
+@router.get("/{run_id}/trace", response_model=RunTraceOut)
+async def export_trace(
+    run_id: UUID, service: RunServiceDep, factory: SessionFactoryDep, response: Response
+) -> RunTraceOut:
+    """The whole run as one JSON document: config, steps, events, tool and model calls,
+    test results, diff and decisions. Served as a download."""
+    run = RunOut.model_validate(await service.get(run_id))
+    details = RunDetails(factory)
+    page = await SqlEventReader(factory).read_after(run_id, 0, TRACE_EVENT_LIMIT + 1)
+    events = page.events if page is not None else []
+    response.headers["content-disposition"] = f'attachment; filename="devagent-run-{run_id}.json"'
+    return RunTraceOut(
+        exported_at=datetime.now(UTC),
+        run=run,
+        steps=[StepOut.model_validate(s) for s in await service.steps(run_id)],
+        events=[
+            TraceEventOut(
+                seq=e.seq,
+                step_id=e.step_id,
+                type=e.event_type,
+                payload=e.payload,
+                created_at=e.created_at,
+            )
+            for e in events[:TRACE_EVENT_LIMIT]
+        ],
+        events_truncated=len(events) > TRACE_EVENT_LIMIT,
+        tool_calls=[ToolCallOut.model_validate(t) for t in await details.tool_calls(run_id)],
+        llm_calls=[LlmCallOut.model_validate(c) for c in await details.llm_calls(run_id)],
+        test_runs=[TestRunOut.model_validate(t) for t in await details.test_runs(run_id)],
+        diff=DiffOut.model_validate(await details.diff(run_id)),
+        approvals=[ApprovalOut.model_validate(a) for a in await details.approvals(run_id)],
+    )
 
 
 @router.get("/{run_id}/steps", response_model=list[StepOut])

@@ -114,6 +114,26 @@ async def test_scripted_agent_run_through_the_deployed_stack() -> None:
 
         await _check_patch_delivery(client, run_id)
 
+        await _check_trace(client, run_id, llm_calls=len(llm), tool_calls=len(tools))
+
+
+async def _check_trace(
+    client: httpx.AsyncClient, run_id: str, *, llm_calls: int, tool_calls: int
+) -> None:
+    """The exported trace carries the whole run in one document."""
+    trace = await client.get(f"/api/v1/runs/{run_id}/trace")
+    assert trace.status_code == 200
+    assert run_id in trace.headers["content-disposition"]
+    body = trace.json()
+    assert body["format"] == "devagent-trace/v1"
+    assert body["run"]["id"] == run_id
+    assert len(body["llm_calls"]) == llm_calls
+    assert len(body["tool_calls"]) == tool_calls
+    assert [e["seq"] for e in body["events"]] == list(range(1, len(body["events"]) + 1))
+    assert body["diff"]["sha256"] == body["run"]["final_diff_sha256"]
+    assert [a["decision"] for a in body["approvals"]] == ["approved"]
+    assert not body["events_truncated"]
+
 
 async def _check_patch_delivery(client: httpx.AsyncClient, run_id: str) -> None:
     # The worker's publish job: a sample repository has no GitHub remote, so the

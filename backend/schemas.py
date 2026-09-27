@@ -3,7 +3,7 @@
 import re
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -333,3 +333,27 @@ class PullRequestOut(_Out):
     state: str
     is_draft: bool
     created_at: datetime
+
+
+class TraceEventOut(BaseModel):
+    seq: int
+    step_id: UUID | None
+    type: str
+    payload: dict[str, Any]
+    created_at: datetime
+
+
+class RunTraceOut(BaseModel):
+    """Everything recorded for one run, in one document (spec 12: exportable trace)."""
+
+    format: Literal["devagent-trace/v1"] = "devagent-trace/v1"
+    exported_at: datetime
+    run: RunOut
+    steps: list[StepOut]
+    events: list[TraceEventOut]
+    events_truncated: bool
+    tool_calls: list[ToolCallOut]
+    llm_calls: list[LlmCallOut]
+    test_runs: list[TestRunOut]
+    diff: DiffOut
+    approvals: list[ApprovalOut]
