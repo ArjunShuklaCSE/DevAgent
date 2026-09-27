@@ -1,6 +1,6 @@
 # 0005. Server-Sent Events with Last-Event-ID replay for live run progress
 
-- Status: Accepted (implemented in Phase 1)
+- Status: Accepted (implemented in Phase 1, see ADR 0009)
 - Date: 2026-09-27
 
 ## Context

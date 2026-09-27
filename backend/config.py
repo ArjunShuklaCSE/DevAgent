@@ -37,6 +37,7 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
     health_check_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
+    sse_keepalive_seconds: float = Field(default=15.0, gt=0, le=120)
 
 
 @lru_cache(maxsize=1)

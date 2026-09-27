@@ -4,8 +4,9 @@ Autonomous GitHub issue solver: give it a Python repository and an issue; it loc
 the code, reproduces the bug with a failing test, plans and applies a fix, validates it
 in an isolated Docker sandbox, and opens a **draft** PR only after you approve the exact diff.
 
-> **Status: Phase 0 of 10 (foundations).** The services, tooling and CI are in place;
-> the agent itself is not built yet. See [PROGRESS.md](PROGRESS.md).
+> **Status: Phase 1 of 10.** Services, data model, run API and live event streaming
+> work; the agent itself is not built yet, so runs are synthetic dry runs.
+> See [PROGRESS.md](PROGRESS.md).
 
 ## Quick start
 
@@ -20,13 +21,14 @@ open http://localhost:3000      # system status page
 
 | Service    | URL / port              | Health check                          |
 |------------|-------------------------|---------------------------------------|
+| `migrate`  | —                       | one-shot `alembic upgrade head`       |
 | `web`      | http://localhost:3000   | `GET /healthz`                        |
 | `api`      | http://localhost:8000   | `GET /health` (readiness, DB + Redis) |
 | `worker`   | —                       | `python -m backend.worker --check`    |
 | `postgres` | 127.0.0.1:5432          | `pg_isready`                          |
 | `redis`    | 127.0.0.1:6379          | `redis-cli ping`                      |
 
-API docs: http://localhost:8000/docs
+API docs: http://localhost:8000/docs · summary in [docs/api.md](docs/api.md)
 
 ## Development
 

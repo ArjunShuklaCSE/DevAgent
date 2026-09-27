@@ -41,7 +41,9 @@ RUN --mount=type=secret,id=extra_ca,required=false \
         cat /etc/ssl/certs/ca-certificates.crt /run/secrets/extra_ca > /tmp/ca.pem; \
         export SSL_CERT_FILE=/tmp/ca.pem; \
     fi; \
-    uv sync --frozen --no-dev --no-editable
+    # --no-cache: uv would otherwise reuse a cached wheel of this project across
+    # source changes (the version number does not change between builds).
+    uv sync --frozen --no-dev --no-editable --no-cache
 
 FROM ${PYTHON_IMAGE} AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
