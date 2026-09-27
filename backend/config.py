@@ -61,6 +61,17 @@ class Settings(BaseSettings):
     sandbox_reap_after_seconds: float = Field(default=2 * 3600, gt=0)
     command_policy_path: str = "config/command_policy.yaml"
 
+    # LLM (worker only; see ADR 0014). Model names and prices are configuration.
+    llm_model: str | None = None  # must have an entry in the pricing file
+    llm_pricing_path: str = "config/model_pricing.yaml"
+    llm_temperature: float = Field(default=0.0, ge=0, le=2)
+    llm_max_output_tokens: int = Field(default=4096, ge=256, le=64_000)
+    anthropic_api_key: SecretStr | None = None
+    anthropic_base_url: str = "https://api.anthropic.com"
+    openai_api_key: SecretStr | None = None
+    openai_base_url: str = "https://api.openai.com"
+    prompts_path: str = "agent/prompts"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

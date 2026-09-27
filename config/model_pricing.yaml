@@ -1,0 +1,39 @@
+# Model prices used for cost accounting and the per-run cost budget (spec 3, 6.6).
+#
+# USD per million tokens. Prices change: check the provider's pricing page and update
+# `as_of` when you do. A run refuses to start with a model that has no entry here,
+# because its cost budget could not be enforced.
+#
+# Add the models you use under `models:`; `provider` selects the adapter
+# (anthropic | openai | scripted).
+currency: USD
+models:
+  gpt-4.1:
+    provider: openai
+    input_per_mtok: 2.00
+    output_per_mtok: 8.00
+    as_of: "2025-04"
+    source: https://openai.com/api/pricing/
+  gpt-4.1-mini:
+    provider: openai
+    input_per_mtok: 0.40
+    output_per_mtok: 1.60
+    as_of: "2025-04"
+    source: https://openai.com/api/pricing/
+  gpt-4o:
+    provider: openai
+    input_per_mtok: 2.50
+    output_per_mtok: 10.00
+    as_of: "2025-04"
+    source: https://openai.com/api/pricing/
+  gpt-4o-mini:
+    provider: openai
+    input_per_mtok: 0.15
+    output_per_mtok: 0.60
+    as_of: "2025-04"
+    source: https://openai.com/api/pricing/
+  # Deterministic test double; costs nothing.
+  scripted:
+    provider: scripted
+    input_per_mtok: 0
+    output_per_mtok: 0
