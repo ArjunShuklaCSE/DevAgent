@@ -92,8 +92,18 @@ services:
       DEVAGENT_SANDBOX_INSTALL_NETWORK: ${DEVAGENT_SANDBOX_INSTALL_NETWORK:-bridge}
       DEVAGENT_SANDBOX_INSTALL_PROXY: ${DEVAGENT_SANDBOX_INSTALL_PROXY:-}
       DEVAGENT_SANDBOX_RUNTIME: ${DEVAGENT_SANDBOX_RUNTIME:-}
+      # Model, keys and prices are configuration (ADR 0014). With no model set, agent
+      # runs fail with "llm_not_configured" unless the request names one.
+      DEVAGENT_LLM_MODEL: ${DEVAGENT_LLM_MODEL:-}
+      DEVAGENT_ANTHROPIC_API_KEY: ${DEVAGENT_ANTHROPIC_API_KEY:-}
+      DEVAGENT_OPENAI_API_KEY: ${DEVAGENT_OPENAI_API_KEY:-}
+      DEVAGENT_PUBLIC_WEB_URL: ${DEVAGENT_PUBLIC_WEB_URL:-http://localhost:3000}
+      # Only used by runs that explicitly request the "scripted" model: replays a test
+      # cassette so the whole pipeline can be demonstrated without an API key.
+      DEVAGENT_LLM_SCRIPT_PATH: ${DEVAGENT_LLM_SCRIPT_PATH:-/app/cassettes/slugger_fix.yaml}
     volumes:
       - workspaces:/var/lib/devagent/workspaces
+      - ./tests/cassettes:/app/cassettes:ro
     networks: [default, docker-control]
     depends_on:
       migrate: { condition: service_completed_successfully }

@@ -86,6 +86,12 @@ def check_writable(rel: str, ctx: ToolContext) -> str:
     path_class = classify_path(rel)
     if path_class == "blocked":
         raise ToolError("blocked_path", f"{rel} is inside .git and can never be edited")
+    if rel in ctx.read_only_paths:
+        raise ToolError(
+            "read_only_path",
+            f"{rel} is read-only in this step (the confirmed reproduction test must not "
+            "change while fixing the bug)",
+        )
     if path_class == "protected" and rel not in ctx.allowed_protected_paths:
         raise ToolError(
             "protected_path",

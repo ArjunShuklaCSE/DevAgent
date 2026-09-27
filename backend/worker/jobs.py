@@ -10,11 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from agent.dry_run import DryRunExecutor
 from agent.ports import RunCancelledError
 from backend import __version__
+from backend.config import get_settings
 from backend.event_bus import EventBus
 from backend.services.recorder import DbRunRecorder
 from backend.services.runs import mark_run_failed
+from backend.worker.agent_job import run_agent
 from core.run_status import RunStatus
 from database.models import AgentRun, RunMode
+from llm.types import LLMError
+from sandbox.docker_sandbox import SandboxError
 
 logger = structlog.get_logger(__name__)
 
@@ -55,14 +59,21 @@ async def execute_run(ctx: dict[str, Any], run_id_str: str) -> str:
         if mode is RunMode.DRY_RUN:
             await DryRunExecutor(recorder, delay_ms / 1000).run()
         else:
-            await mark_run_failed(
-                session_factory,
-                bus,
-                run_id,
-                "mode_not_available",
-                f"Run mode '{mode.value}' is not available in this version",
-            )
-            return "failed"
+            try:
+                status = await run_agent(
+                    run_id=run_id,
+                    settings=get_settings(),
+                    session_factory=session_factory,
+                    recorder=recorder,
+                    sandbox=ctx.get("sandbox"),
+                )
+            except (LLMError, SandboxError) as exc:
+                # Setup problems (no model configured, no sandbox) before the agent starts.
+                code = exc.code
+                await mark_run_failed(session_factory, bus, run_id, code, str(exc))
+                return "failed"
+            log.info("run_finished", status=status.value)
+            return status.value
     except RunCancelledError as exc:
         closed = await recorder.close_open_steps(str(exc))
         log.info("run_stopped", reason=str(exc), closed_steps=closed)

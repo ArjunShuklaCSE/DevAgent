@@ -7,6 +7,7 @@ in the lifespan through an injectable ``ResourceFactory`` so tests can substitut
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 
 import structlog
 from arq import create_pool
@@ -77,6 +78,7 @@ def create_app(
             app.state.event_bus = resources.event_bus
             app.state.run_queue = resources.run_queue
             app.state.sse_keepalive_seconds = settings.sse_keepalive_seconds
+            app.state.samples_root = Path(settings.sample_repos_path)
             logger.info("api_started", environment=settings.environment, version=__version__)
             yield
         logger.info("api_stopped")

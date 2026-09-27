@@ -3,10 +3,10 @@
 import re
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from core.run_status import RunStatus
 from database.models import IssueSource, RepositorySource, RunMode, StepStatus
@@ -25,17 +25,32 @@ class _Out(BaseModel):
 
 
 class RepositoryCreate(BaseModel):
-    url: str = Field(examples=["https://github.com/pallets/click"])
+    """A GitHub repository (``url``) or one of the bundled sample repositories (``sample``)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str | None = Field(default=None, examples=["https://github.com/pallets/click"])
+    sample: str | None = Field(
+        default=None, pattern=r"^[a-z][a-z0-9_-]{0,63}$", examples=["slugger"]
+    )
 
     @field_validator("url")
     @classmethod
-    def _must_be_github_repo_url(cls, value: str) -> str:
+    def _must_be_github_repo_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if not _GITHUB_URL.match(value.strip()):
             raise ValueError("must be a GitHub repository URL like https://github.com/owner/name")
         return value.strip()
 
+    @model_validator(mode="after")
+    def _exactly_one_source(self) -> "RepositoryCreate":
+        if (self.url is None) == (self.sample is None):
+            raise ValueError("give exactly one of 'url' or 'sample'")
+        return self
+
     def owner_and_name(self) -> tuple[str, str]:
-        match = _GITHUB_URL.match(self.url)
+        match = _GITHUB_URL.match(self.url or "")
         assert match is not None  # noqa: S101 - validated above
         return match["owner"], match["name"]
 
@@ -63,10 +78,12 @@ class Page[T](BaseModel):
 class IssueInput(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     body: str = Field(default="", max_length=65_536)
+    number: int | None = Field(default=None, ge=1, description="GitHub issue number, if any")
 
 
 class RunBudget(BaseModel):
-    """Per-run limits (spec 6.6). Stored in the run's config snapshot; enforced from Phase 5."""
+    """Per-run limits (spec 6.6), stored in the run's config snapshot and enforced by the
+    agent before every step, fix attempt and LLM call."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -83,8 +100,11 @@ class RunCreate(BaseModel):
 
     repository_id: UUID
     issue: IssueInput
-    # Only the synthetic dry run exists until the agent loop lands (Phase 6).
-    mode: Literal[RunMode.DRY_RUN] = RunMode.DRY_RUN
+    # "agent" runs the real agent; "dry_run" walks the state machine with synthetic steps.
+    mode: RunMode = RunMode.AGENT
+    model: str | None = Field(
+        default=None, max_length=100, description="model from the pricing file; default: server"
+    )
     budget: RunBudget = Field(default_factory=RunBudget)
     dry_run_step_delay_ms: int = Field(default=250, ge=0, le=10_000)
 
@@ -105,6 +125,12 @@ class RunOut(_Out):
     status: RunStatus
     status_reason: str | None
     config: dict[str, Any]
+    base_commit_sha: str | None
+    sandbox_image_digest: str | None
+    prompt_versions: dict[str, Any]
+    final_diff_sha256: str | None
+    injection_flags: list[Any]
+    result: dict[str, Any]
     step_count: int
     fix_attempts: int
     input_tokens: int

@@ -1,6 +1,7 @@
 """FastAPI dependencies resolved from ``app.state`` (set in the lifespan)."""
 
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -27,6 +28,11 @@ async def get_session(
         yield session
 
 
+def get_samples_root(request: Request) -> Path:
+    root: Path = request.app.state.samples_root
+    return root
+
+
 def get_run_service(request: Request) -> RunService:
     return RunService(
         request.app.state.session_factory, request.app.state.event_bus, request.app.state.run_queue
@@ -37,3 +43,4 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 RunServiceDep = Annotated[RunService, Depends(get_run_service)]
 EventBusDep = Annotated[EventBus, Depends(get_event_bus)]
 SessionFactoryDep = Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)]
+SamplesRootDep = Annotated[Path, Depends(get_samples_root)]

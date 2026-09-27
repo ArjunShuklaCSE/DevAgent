@@ -72,6 +72,10 @@ class ToolContext:
     test_command: tuple[str, ...] | None = None
     # Protected paths (CI config, lockfiles) the approved plan explicitly justified.
     allowed_protected_paths: frozenset[str] = frozenset()
+    # Paths no tool may write in this step (e.g. the confirmed reproduction test).
+    read_only_paths: frozenset[str] = frozenset()
+    # Upper bound for any sandbox command in this run (the run budget's command timeout).
+    command_timeout_seconds: float | None = None
     step_id: str | None = None
 
     @property

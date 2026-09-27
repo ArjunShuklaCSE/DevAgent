@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from agent.ports import RunCancelledError, StepHandle, StepOutcome
+from agent.ports import RunCancelledError, RunUpdate, StepHandle, StepOutcome
 from backend.event_bus import EventBus
 from backend.services.event_store import append_event
 from core.events import EventPayload, StatusChanged, StepCompleted, StepStarted
@@ -103,6 +103,9 @@ class DbRunRecorder:
         outcome: StepOutcome,
         summary: str,
         output: dict[str, Any] | None = None,
+        *,
+        rationale: str | None = None,
+        error: dict[str, Any] | None = None,
     ) -> None:
         started = self._step_started.pop(step.id, time.perf_counter())
         duration_ms = int((time.perf_counter() - started) * 1000)
@@ -122,6 +125,8 @@ class DbRunRecorder:
                 record.status = _OUTCOME_TO_STATUS[outcome]
                 record.summary = summary
                 record.output = output or {}
+                record.rationale = rationale
+                record.error = error
                 cancelled = False
                 seq = await append_event(
                     session,
@@ -148,6 +153,28 @@ class DbRunRecorder:
                 raise RunCancelledError(f"run is {run.status.value}")
             seq = await append_event(session, self.run_id, payload, step.id if step else None)
         await self._bus.publish(self.run_id, seq)
+
+    async def update_run(self, update: RunUpdate) -> None:
+        async with self._session_factory() as session, session.begin():
+            run = await self._locked_run(session)
+            for name in (
+                "base_commit_sha",
+                "sandbox_image_digest",
+                "final_diff",
+                "final_diff_sha256",
+                "fix_attempts",
+            ):
+                value = getattr(update, name)
+                if value is not None:
+                    setattr(run, name, value)
+            if update.prompt_versions is not None:
+                run.prompt_versions = {**run.prompt_versions, **update.prompt_versions}
+            if update.injection_flags is not None:
+                run.injection_flags = update.injection_flags
+            if update.config is not None:
+                run.config = {**run.config, **update.config}
+            if update.result is not None:
+                run.result = {**run.result, **update.result}
 
     async def close_open_steps(self, reason: str) -> int:
         """Mark steps left ``running`` by an interrupted executor as ``skipped``.

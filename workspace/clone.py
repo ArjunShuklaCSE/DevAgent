@@ -269,7 +269,10 @@ async def copy_local_repository(
         source,
         dest,
         symlinks=True,
-        ignore=shutil.ignore_patterns(".git"),
+        # Local build and test leftovers are never part of a sample's source.
+        ignore=shutil.ignore_patterns(
+            ".git", "__pycache__", "*.pyc", ".pytest_cache", "*.egg-info", ".mypy_cache"
+        ),
         dirs_exist_ok=True,
     )
     home = Path(tempfile.mkdtemp(prefix="devagent-githome-"))

@@ -33,6 +33,7 @@ async def _create_dry_run(client: httpx.AsyncClient, delay_ms: int) -> str:
         json={
             "repository_id": repo.json()["id"],
             "issue": {"title": "Dry run", "body": "synthetic"},
+            "mode": "dry_run",
             "dry_run_step_delay_ms": delay_ms,
         },
     )
