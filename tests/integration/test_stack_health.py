@@ -7,7 +7,7 @@ import pytest
 from arq import create_pool
 from arq.connections import RedisSettings
 
-from backend.worker.main import QUEUE_NAME
+from backend.queue import QUEUE_NAME
 
 pytestmark = pytest.mark.integration
 

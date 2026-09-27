@@ -15,10 +15,12 @@ dependencies = [
     "redis>=5.0",
     "arq>=0.26",
     "structlog>=24.1",
+    "alembic>=1.13",
 ]
 
 [dependency-groups]
 dev = [
+    "asyncpg-stubs>=0.31.3",
     "httpx>=0.27",
     "import-linter>=2.1",
     "mypy>=1.11",
@@ -34,6 +36,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = [
+    "core",
     "backend",
     "agent",
     "tools",
@@ -62,6 +65,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "ANN", "PLR2004", "S105", "S106"]
+"database/migrations/versions/**" = ["E501"]  # generated CHECK constraint strings
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
@@ -74,7 +78,7 @@ warn_unreachable = true
 pretty = true
 plugins = ["pydantic.mypy"]
 files = [
-    "backend", "agent", "tools", "sandbox", "llm",
+    "core", "backend", "agent", "tools", "sandbox", "llm",
     "evaluation", "database", "mcp_server", "tests",
 ]
 
@@ -99,6 +103,7 @@ filterwarnings = ["error"]
 # Enforces the dependency rule from the spec (Section 4.2) in CI.
 [tool.importlinter]
 root_packages = [
+    "core",
     "backend", "agent", "tools", "sandbox", "llm",
     "evaluation", "database", "mcp_server",
 ]
@@ -114,6 +119,12 @@ name = "Agent does not depend on the web layer"
 type = "forbidden"
 source_modules = ["agent"]
 forbidden_modules = ["backend"]
+
+[[tool.importlinter.contracts]]
+name = "Core domain kernel imports no other DevAgent package"
+type = "forbidden"
+source_modules = ["core"]
+forbidden_modules = ["backend", "agent", "tools", "sandbox", "llm", "evaluation", "database", "mcp_server"]
 
 [[tool.importlinter.contracts]]
 name = "Database models do not import application layers"

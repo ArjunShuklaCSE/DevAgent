@@ -1,5 +1,6 @@
 # DevAgent local stack: `docker compose up --build --wait`
 #
+# `migrate` applies Alembic migrations before `api` and `worker` start.
 # Only `worker` will get Docker access (Phase 3). Ports are bound to 127.0.0.1.
 
 name: devagent
@@ -49,14 +50,22 @@ services:
       retries: 10
     restart: unless-stopped
 
-  api:
+  migrate:
     build: *backend-build
+    image: devagent-backend:dev
+    command: ["python", "-m", "database.migrate", "upgrade", "head"]
+    environment: *backend-env
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  api:
     image: devagent-backend:dev
     environment: *backend-env
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     depends_on:
-      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
     healthcheck:
       test:
@@ -75,8 +84,8 @@ services:
     command: ["python", "-m", "backend.worker"]
     environment: *backend-env
     depends_on:
+      migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
-      api: { condition: service_started }  # shares the image built by `api`
     healthcheck:
       test: ["CMD", "python", "-m", "backend.worker", "--check"]
       interval: 15s

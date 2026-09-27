@@ -15,20 +15,32 @@ from arq.worker import check_health
 
 from backend import __version__
 from backend.config import Settings, get_settings
+from backend.event_bus import RedisEventBus
 from backend.logging_setup import configure_logging
-from backend.worker.jobs import ping
+from backend.queue import QUEUE_NAME
+from backend.worker.jobs import execute_run, ping
+from database.engine import create_engine, create_session_factory
 
 logger = structlog.get_logger(__name__)
 
-QUEUE_NAME = "devagent:queue"
+
 HEALTH_CHECK_INTERVAL_SECONDS = 10
 
 
-async def _on_startup(_ctx: dict[str, Any]) -> None:
+async def _on_startup(ctx: dict[str, Any]) -> None:
+    settings = get_settings()
+    engine = create_engine(settings.database_url.get_secret_value())
+    ctx["engine"] = engine
+    ctx["session_factory"] = create_session_factory(engine)
+    # arq's own connection (ctx["redis"]) is a redis.asyncio.Redis; reuse it for events.
+    ctx["event_bus"] = RedisEventBus(ctx["redis"])
     logger.info("worker_started", version=__version__, queue=QUEUE_NAME)
 
 
-async def _on_shutdown(_ctx: dict[str, Any]) -> None:
+async def _on_shutdown(ctx: dict[str, Any]) -> None:
+    engine = ctx.get("engine")
+    if engine is not None:
+        await engine.dispose()
     logger.info("worker_stopped")
 
 
@@ -36,7 +48,7 @@ def build_worker_settings(settings: Settings) -> type:
     """Build the arq settings class from typed settings (arq expects a class)."""
 
     class WorkerSettings:
-        functions: ClassVar[list[Any]] = [ping]
+        functions: ClassVar[list[Any]] = [ping, execute_run]
         queue_name = QUEUE_NAME
         redis_settings = RedisSettings.from_dsn(settings.redis_url.get_secret_value())
         health_check_interval = HEALTH_CHECK_INTERVAL_SECONDS
