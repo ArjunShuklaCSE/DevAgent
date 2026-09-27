@@ -1,7 +1,9 @@
 # DevAgent local stack: `docker compose up --build --wait`
 #
 # `migrate` applies Alembic migrations before `api` and `worker` start.
-# Only `worker` will get Docker access (Phase 3). Ports are bound to 127.0.0.1.
+# `sandbox-image` builds the image agent commands run in. Only `docker-proxy` touches
+# the Docker socket; `worker` reaches it over a private network and the proxy only
+# lets it run sandbox containers (ADR 0007). Ports are bound to 127.0.0.1.
 
 name: devagent
 
@@ -82,16 +84,68 @@ services:
   worker:
     image: devagent-backend:dev
     command: ["python", "-m", "backend.worker"]
-    environment: *backend-env
+    environment:
+      <<: *backend-env
+      DEVAGENT_DOCKER_HOST: tcp://docker-proxy:2375
+      DEVAGENT_WORKSPACE_ROOT: /var/lib/devagent/workspaces
+      DEVAGENT_SANDBOX_WORKSPACE_VOLUME: devagent-workspaces
+      DEVAGENT_SANDBOX_INSTALL_NETWORK: ${DEVAGENT_SANDBOX_INSTALL_NETWORK:-bridge}
+      DEVAGENT_SANDBOX_INSTALL_PROXY: ${DEVAGENT_SANDBOX_INSTALL_PROXY:-}
+      DEVAGENT_SANDBOX_RUNTIME: ${DEVAGENT_SANDBOX_RUNTIME:-}
+    volumes:
+      - workspaces:/var/lib/devagent/workspaces
+    networks: [default, docker-control]
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
+      docker-proxy: { condition: service_healthy }
+      sandbox-image: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD", "python", "-m", "backend.worker", "--check"]
       interval: 15s
       timeout: 5s
       start_period: 15s
       retries: 3
+    restart: unless-stopped
+
+  # Builds the sandbox image and exits; the worker starts containers from it.
+  sandbox-image:
+    build:
+      context: .
+      dockerfile: docker/sandbox.Dockerfile
+      secrets: [extra_ca]
+    image: devagent-sandbox:dev
+    network_mode: none
+    restart: "no"
+
+  # The only service with the Docker socket. Filters every request (sandbox/docker_proxy.py).
+  docker-proxy:
+    image: devagent-backend:dev
+    command: ["python", "-m", "sandbox.docker_proxy"]
+    user: "0:0"  # needs the root-owned socket; no capabilities, read-only filesystem
+    environment:
+      DEVAGENT_PROXY_ALLOWED_IMAGES: '["devagent-sandbox:dev"]'
+      DEVAGENT_PROXY_ALLOWED_VOLUMES: '["devagent-workspaces"]'
+      DEVAGENT_PROXY_ALLOWED_NETWORKS: '["none", "${DEVAGENT_SANDBOX_INSTALL_NETWORK:-bridge}"]'
+      DEVAGENT_PROXY_ALLOWED_RUNTIMES: '["", "runc", "${DEVAGENT_SANDBOX_RUNTIME:-runc}"]'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [docker-control]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }  # image is built by migrate
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:2375/_ping', timeout=3).status == 200 else 1)"
+      interval: 10s
+      timeout: 5s
+      start_period: 5s
+      retries: 5
     restart: unless-stopped
 
   web:
@@ -122,3 +176,11 @@ secrets:
 volumes:
   postgres-data:
   redis-data:
+  workspaces:
+    name: devagent-workspaces  # fixed name: the proxy allowlists it and sandboxes mount it
+
+networks:
+  default:
+  # Worker <-> proxy only. `internal` keeps it off the host's external network.
+  docker-control:
+    internal: true

@@ -45,6 +45,22 @@ class Settings(BaseSettings):
     max_repo_files: int = Field(default=20_000, gt=0)
     clone_timeout_seconds: float = Field(default=300, gt=0, le=3600)
 
+    # Sandbox (worker only; see ADR 0012)
+    docker_host: str | None = None  # e.g. tcp://docker-proxy:2375; None = DOCKER_HOST/socket
+    sandbox_image: str = "devagent-sandbox:dev"
+    sandbox_user: str = Field(default="10001:10001", pattern=r"^[1-9][0-9]*:[1-9][0-9]*$")
+    sandbox_cpus: float = Field(default=1.0, gt=0, le=16)
+    sandbox_memory_mb: int = Field(default=1024, ge=64)
+    sandbox_pids: int = Field(default=256, ge=16)
+    sandbox_tmpfs_mb: int = Field(default=256, ge=16)
+    sandbox_workspace_volume: str | None = None
+    sandbox_install_network: str = "bridge"
+    sandbox_install_proxy: str | None = None  # HTTP(S) proxy for dependency installs only
+    sandbox_extra_ca_file: str | None = None  # CA bundle for installs behind that proxy
+    sandbox_runtime: str | None = None  # e.g. "runsc" (gVisor)
+    sandbox_reap_after_seconds: float = Field(default=2 * 3600, gt=0)
+    command_policy_path: str = "config/command_policy.yaml"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

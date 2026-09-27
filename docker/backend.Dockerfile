@@ -52,10 +52,15 @@ FROM ${PYTHON_IMAGE} AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:$PATH
+# The workspace directory exists in the image, owned by the worker user, so a named
+# volume mounted there starts out writable by it.
 RUN groupadd --system --gid 10001 devagent \
-    && useradd --system --uid 10001 --gid devagent --no-create-home devagent
+    && useradd --system --uid 10001 --gid devagent --no-create-home devagent \
+    && mkdir -p /var/lib/devagent/workspaces \
+    && chown devagent:devagent /var/lib/devagent/workspaces
 COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
+COPY config ./config
 USER devagent
 EXPOSE 8000
 CMD ["uvicorn", "backend.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

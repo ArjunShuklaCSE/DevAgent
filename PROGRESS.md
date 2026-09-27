@@ -7,7 +7,7 @@ Build follows the phased plan in the spec (Section 16). Each phase stops for rev
 | 0 | Foundations | ✅ Done |
 | 1 | Data model, run API, live events | ✅ Done |
 | 2 | Safe cloning & repository analysis | ✅ Done |
-| 3 | Docker sandbox | Not started |
+| 3 | Docker sandbox | ✅ Done |
 | 4 | Tools | Not started |
 | 5 | LLM layer, budgets, prompt structure | Not started |
 | 6 | Agent loop | Not started |
@@ -113,6 +113,65 @@ its own draft PR, report and verification.
   enforced while fetching instead.
 - Clone is not yet called from a run; the agent loop wires it in (Phase 6).
 
+## Phase 3: Docker sandbox (2026-09-27)
+
+### Done
+- `sandbox/docker_sandbox.py`: one container per command from the pinned sandbox image.
+  It runs as non-root uid 10001 with all capabilities dropped, `no-new-privileges`, a
+  read-only root fs, a `/tmp` tmpfs, CPU, memory (no swap) and PID limits, `init`, a
+  capped log driver, and an explicit environment. Network is `none` except for the
+  install profile. Output is captured with head and tail kept, and a 64 MB flood kills
+  the command. Timeouts kill the container, cancellation removes it, and `kill_run`
+  and `reap` clean up by label (ADR 0012).
+- Per-run layout: `repo/` → `/workspace`, `env/` (virtualenv, writable only during
+  install) → `/env`, `reports/` → `/reports`. In Compose these are subpaths of the
+  `devagent-workspaces` volume.
+- `install()` creates the run virtualenv (`--system-site-packages`) and runs the
+  analyzer's install commands. `run_tests()` adds `--junitxml` for pytest and parses
+  the report with `defusedxml` (`sandbox/junit.py`).
+- `config/command_policy.yaml` + `sandbox/policy.py`: argv-only allowlist per profile,
+  python limited to `.py` files and allowlisted `-m` modules (no `-c`), pip limited to
+  `install` with no custom index, path arguments confined, and argument, timeout and
+  output limits.
+- `docker/sandbox.Dockerfile`: `python:3.12-slim@sha256:f77ac9e4...` with pinned
+  pytest, ruff, mypy, setuptools and wheel. The `sandbox-image` Compose service builds it.
+- ADR 0007 decided: `sandbox/docker_proxy.py`, a filtering Docker API proxy
+  (`docker-proxy` service, the only holder of the socket, on an internal network with
+  the worker). It validates create bodies, allowlists endpoints, allows only
+  DevAgent-labelled containers, and refuses `exec`.
+- Worker: builds the sandbox at startup, logs the image, reaps old containers, runs a
+  `reap_sandboxes` cron every 15 minutes, and has a `sandbox_check` job that probes the
+  deployed path end to end.
+- New settings: `DEVAGENT_DOCKER_HOST`, `DEVAGENT_SANDBOX_*` and
+  `DEVAGENT_COMMAND_POLICY_PATH` (documented in `.env.example`).
+
+### Verified (see phase report)
+- Security tests against real containers: no network (only `lo`), worker env doesn't
+  leak, uid is non-root, CapEff is 0, NoNewPrivs is 1, the root fs, `/etc` and `/env`
+  are read-only, and there's no docker.sock. Timeout, OOM, PID limit and output cap are
+  enforced. Policy rejections start no container. Cancel, kill_run and the reaper remove
+  containers. An install followed by tests gives a parsed JUnit report.
+- The proxy against a real daemon: the sandbox works through it unchanged. 11 kinds of
+  unsafe create (privileged, host binds, docker.sock, host network/pid, cap_add, writable
+  root, seccomp=unconfined, devices, root user, other image) get 403. Networks, volumes,
+  pull, unfiltered list, info, image list and other images get 403. Containers not
+  created by DevAgent can't be touched. Exec on a sandbox container gets 403.
+  Malformed, chunked and oversized requests get 400.
+- The full Compose stack (8 services) is healthy. `sandbox_check` runs through
+  worker → proxy → daemon with the workspace on the shared volume.
+- The textchunk sample repo installed (`pip install -e .[test]`) and its tests ran in
+  the sandbox with a parsed JUnit report.
+
+### Known issues / deferred
+- Only the Python install and test path exists, matching the analyzer (v1 scope).
+- `pip install -e .` leaves `*.egg-info` in the workspace; diffs will exclude it (Phase 4).
+- gVisor (`runsc`) is supported by config but not tested here (not installed).
+- A compromised worker could still read or modify other runs' workspaces on the shared
+  volume (ADR 0007, Consequences).
+- In this development environment, dependency installs reach PyPI through a host
+  proxy, so the local `.env` sets `DEVAGENT_SANDBOX_INSTALL_NETWORK=host`. CI and normal
+  hosts use `bridge`.
+
 ## Next
-Phase 3: Docker sandbox (image, limits, network modes, command policy, output capture,
-orphan reaper, dependency install) and the worker's Docker access decision (ADR 0007).
+Phase 4: tool registry and tools (file read/search/edit with path safety, test and
+command tools through the sandbox, diff), logged to `tool_calls` and `code_changes`.

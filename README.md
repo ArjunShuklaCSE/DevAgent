@@ -4,9 +4,9 @@ Autonomous GitHub issue solver: give it a Python repository and an issue; it loc
 the code, reproduces the bug with a failing test, plans and applies a fix, validates it
 in an isolated Docker sandbox, and opens a **draft** PR only after you approve the exact diff.
 
-> **Status: Phase 1 of 10.** Services, data model, run API and live event streaming
-> work; the agent itself is not built yet, so runs are synthetic dry runs.
-> See [PROGRESS.md](PROGRESS.md).
+> **Status: Phase 3 of 10.** Services, data model, run API, live events, safe cloning,
+> repository analysis and the Docker sandbox work; the agent loop is not built yet, so
+> runs are synthetic dry runs. See [PROGRESS.md](PROGRESS.md).
 
 ## Quick start
 
@@ -25,6 +25,8 @@ open http://localhost:3000      # system status page
 | `web`      | http://localhost:3000   | `GET /healthz`                        |
 | `api`      | http://localhost:8000   | `GET /health` (readiness, DB + Redis) |
 | `worker`   | —                       | `python -m backend.worker --check`    |
+| `docker-proxy` | internal only       | `GET /_ping` (filtering Docker API proxy, ADR 0007) |
+| `sandbox-image` | —                  | one-shot build of `devagent-sandbox:dev` |
 | `postgres` | 127.0.0.1:5432          | `pg_isready`                          |
 | `redis`    | 127.0.0.1:6379          | `redis-cli ping`                      |
 
@@ -36,12 +38,17 @@ API docs: http://localhost:8000/docs · summary in [docs/api.md](docs/api.md)
 uv sync                          # Python 3.12 env with dev tools
 uv run pre-commit install
 uv run pytest                    # unit + security tests (no services needed)
-uv run pytest -m integration     # needs `docker compose up`
+uv run pytest -m integration     # needs `docker compose up` (also builds the sandbox image)
 uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run lint-imports
 
 cd frontend && pnpm install
 pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build
 ```
+
+Agent commands run in throwaway containers with no network, a read-only root, dropped
+capabilities and resource limits; the worker reaches Docker only through a filtering
+proxy. See [ADR 0012](docs/decisions/0012-sandbox-execution.md) and
+[config/command_policy.yaml](config/command_policy.yaml).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions and
 [docs/decisions/](docs/decisions/) for architecture decision records.

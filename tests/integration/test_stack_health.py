@@ -35,3 +35,17 @@ async def test_worker_consumes_jobs_from_queue() -> None:
         await pool.aclose()
     assert result["status"] == "ok"
     assert result["job_id"] == job.job_id
+
+
+async def test_worker_runs_sandbox_through_the_proxy() -> None:
+    """The deployed path: worker -> docker-proxy -> daemon, workspace on the shared volume."""
+    pool = await create_pool(RedisSettings.from_dsn(REDIS_URL), default_queue_name=QUEUE_NAME)
+    try:
+        job = await pool.enqueue_job("sandbox_check")
+        assert job is not None
+        result = await job.result(timeout=90)
+    finally:
+        await pool.aclose()
+    assert result["exit_code"] == 0, result["stderr"]
+    assert str(result["image_id"]).startswith("sha256:")
+    assert result["facts"] == {"uid": "10001", "interfaces": "lo", "root_fs": "read-only"}
