@@ -9,7 +9,7 @@ Build follows the phased plan in the spec (Section 16). Each phase stops for rev
 | 2 | Safe cloning & repository analysis | ✅ Done |
 | 3 | Docker sandbox | ✅ Done |
 | 4 | Tools | ✅ Done |
-| 5 | LLM layer, budgets, prompt structure | Not started |
+| 5 | LLM layer, budgets, prompt structure | ✅ Done |
 | 6 | Agent loop | Not started |
 | 7 | Frontend dashboard | Not started |
 | 8 | GitHub auth, approval, PR creation | Not started |
@@ -211,7 +211,51 @@ its own draft PR, report and verification.
   in the sandbox.
 - `find_references` is name-based (no type inference), so it can over-report.
 
+## Phase 5: LLM layer, budgets, prompt structure (2026-09-27)
+
+### Done
+- `llm/types.py`: neutral request and response types. `llm/anthropic_adapter.py` and
+  `llm/openai_adapter.py` use `httpx` with bounded retries on rate limits and server
+  errors (ADR 0014).
+- `config/model_pricing.yaml` + `llm/pricing.py`: Decimal cost accounting. A model
+  without a price entry is refused.
+- `llm/budget.py`: `BudgetTracker` with steps, fix attempts, tokens, cost and wall
+  clock, all checked before the action. The LLM check is worst case.
+- `llm/metered.py`: `MeteredLLMClient` prices, budgets and records every call,
+  including errors and refusals. `backend/services/llm_log.py` writes `llm_calls` and
+  emits `llm_usage` events.
+- `llm/prompting.py`: system policy, then role prompt, then task, then untrusted
+  content. `wrap_untrusted` neutralises breakout attempts. `PromptLibrary` versions
+  prompts by file and content hash.
+- `llm/structured.py`: answers come through a `submit` tool, are validated by Pydantic,
+  and invalid answers are retried (3 attempts). Every output carries a rationale.
+- `llm/injection.py`: heuristic injection flags for the UI.
+- `llm/scripted.py`: `ScriptedLLM` with checked expectations and YAML cassettes.
+- `backend/llm_factory.py` + `DEVAGENT_LLM_*` / provider key settings.
+
+### Verified (see phase report)
+- 47 new unit tests:
+  - both adapters' wire formats with mocked HTTP, retry and no-retry cases, keys never
+    in errors;
+  - pricing math;
+  - each budget limit, and a refused call never reaching the provider;
+  - wrapper breakout attempts;
+  - injection flags on the adversarial sample repo, with no flags on ordinary issue
+    text;
+  - structured retries and bounds;
+  - cassette expectations.
+- Postgres integration: `llm_calls` rows for two attempts plus a budget refusal, with
+  exact costs, rationale and `llm_usage` events.
+
+### Known issues / deferred
+- No live provider call has been made: no API key is available here. The adapters are
+  tested against the documented wire formats.
+- The pricing file ships only OpenAI entries (dated 2025-04). Add the models you use,
+  with current prices.
+- Role prompts for each component and the `budget_exceeded` transition come with the
+  orchestrator (Phase 6).
+
 ## Next
-Phase 5: LLM layer (`LLMClient`, provider adapter, `ScriptedLLM`, cost accounting from
-`config/model_pricing.yaml`, budgets, versioned prompts, untrusted-content wrapping,
-structured-output validation with bounded retries).
+Phase 6: orchestrator and all components (issue analyzer, localizer, reproducer,
+planner, editor, debugger, validator, PR writer), reproduction-first flow with a
+bounded debug loop, and a ScriptedLLM integration run that reaches `awaiting_approval`.
