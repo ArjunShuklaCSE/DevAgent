@@ -35,3 +35,19 @@
 .diff-theme .diff-gutter {
   color: var(--color-zinc-500);
 }
+
+/* Recharts colours (evaluation page). */
+:root {
+  --chart-axis: var(--color-zinc-500);
+  --chart-grid: var(--color-zinc-200);
+  --chart-cursor: rgb(113 113 122 / 0.08);
+  --chart-tooltip-bg: #fff;
+  --chart-failure: var(--color-rose-500);
+}
+.dark {
+  --chart-axis: var(--color-zinc-400);
+  --chart-grid: var(--color-zinc-800);
+  --chart-cursor: rgb(161 161 170 / 0.08);
+  --chart-tooltip-bg: var(--color-zinc-900);
+  --chart-failure: var(--color-rose-400);
+}

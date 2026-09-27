@@ -1,1 +1,1 @@
-"""Evaluation datasets, harness, scoring and report generation. Implemented in Phase 9."""
+"""Benchmarking: datasets, the harness, hidden-test scoring, metrics and reports."""

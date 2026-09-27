@@ -283,6 +283,78 @@ export async function toApiError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, "http_error", `Request failed with HTTP ${response.status}`);
 }
 
+export interface Rate {
+  k: number;
+  n: number;
+  value: number | null;
+  ci_low: number;
+  ci_high: number;
+}
+
+export type FailureCategory =
+  | "environment"
+  | "localization"
+  | "reproduction"
+  | "incorrect_fix"
+  | "regression"
+  | "invalid_patch"
+  | "budget_exceeded"
+  | "timeout"
+  | "infra";
+
+export interface EvalCaseResult {
+  case_id: string;
+  difficulty: string;
+  repeat: number;
+  agent_run_id: string | null;
+  run_status: RunStatus | null;
+  resolved: boolean;
+  patch_applied: boolean;
+  reproduction_created: boolean;
+  fail_to_pass_passed: number;
+  fail_to_pass_total: number;
+  pass_to_pass_regressions: number;
+  retries: number;
+  steps: number;
+  wall_clock_ms: number;
+  tokens: number;
+  cost_usd: number;
+  failure_category: FailureCategory | null;
+  details: Record<string, unknown>;
+}
+
+export interface EvalRunSummary {
+  id: string;
+  dataset: string;
+  dataset_version: string;
+  model: string;
+  label: string | null;
+  status: "running" | "completed" | "failed";
+  repeats: number;
+  config: Record<string, unknown> & { budget?: Partial<Budget> };
+  prompt_versions: Record<string, string>;
+  started_at: string | null;
+  finished_at: string | null;
+  n: number;
+  resolved: Rate;
+  patch_applied: Rate;
+  reproduction_created: Rate;
+  regression_free: Rate;
+  mean_retries: number | null;
+  median_steps: number | null;
+  median_wall_clock_ms: number | null;
+  median_tokens: number | null;
+  mean_cost_usd: number | null;
+  total_cost_usd: number;
+  failures: Partial<Record<FailureCategory, number>>;
+  by_difficulty: Record<string, Rate>;
+  skipped: string[];
+}
+
+export interface EvalRunDetail extends EvalRunSummary {
+  results: EvalCaseResult[];
+}
+
 async function request<T>(
   path: string,
   init?: RequestInit,
@@ -333,6 +405,8 @@ export const api = {
     fetch("/api/v1/auth/logout", { method: "POST" }).then((r) => {
       if (!r.ok) throw new ApiError(r.status, "logout_failed", "Sign-out failed");
     }),
+  evalRuns: () => request<EvalRunSummary[]>("/evaluation/runs?limit=50"),
+  evalRun: (id: string) => request<EvalRunDetail>(`/evaluation/runs/${id}`),
   issues: (repositoryId: string) =>
     request<GitHubIssue[]>(`/repositories/${repositoryId}/issues?limit=30`),
 };

@@ -35,6 +35,12 @@ walks the real state machine with **synthetic** steps: every event carries
 `"synthetic": true` and step summaries start with `[dry run]`. It ends in
 `awaiting_approval`; cancel it to close it.
 
+## Evaluation
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/v1/evaluation/runs` | `?limit=` → stored benchmark runs with summary metrics (newest first). |
+| GET | `/api/v1/evaluation/runs/{id}` | Summary plus per-case results. Runs are started with `devagent eval run` ([evaluation.md](evaluation.md)). |
+
 ### Example
 ```bash
 REPO=$(curl -s -X POST localhost:8000/api/v1/repositories \

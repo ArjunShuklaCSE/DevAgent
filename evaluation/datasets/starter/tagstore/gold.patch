@@ -1,0 +1,16 @@
+diff --git a/tagstore/items.py b/tagstore/items.py
+index 29e0c48..904fc22 100644
+--- a/tagstore/items.py
++++ b/tagstore/items.py
+@@ -2,9 +2,9 @@
+ 
+ 
+ class Item:
+-    def __init__(self, name, tags=[]):
++    def __init__(self, name, tags=None):
+         self.name = name
+-        self.tags = tags
++        self.tags = list(tags) if tags is not None else []
+ 
+     def add_tag(self, tag):
+         if tag not in self.tags:

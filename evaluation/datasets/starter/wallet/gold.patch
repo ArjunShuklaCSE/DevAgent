@@ -1,0 +1,11 @@
+diff --git a/wallet/account.py b/wallet/account.py
+index a32951a..93a2144 100644
+--- a/wallet/account.py
++++ b/wallet/account.py
+@@ -20,5 +20,5 @@ class Account:
+         if amount <= 0:
+             raise ValueError("withdrawal must be positive")
+         if amount > self.balance:
+-            raise ValueError("insufficient funds")
++            raise InsufficientFundsError("insufficient funds")
+         self.balance -= amount

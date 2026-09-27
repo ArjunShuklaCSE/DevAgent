@@ -18,7 +18,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend import __version__
-from backend.api import auth, health, repositories, runs
+from backend.api import auth, evaluation, health, repositories, runs
 from backend.config import Settings, get_settings
 from backend.crypto import SecretBox
 from backend.errors import register_error_handlers
@@ -130,5 +130,6 @@ def create_app(
     api_v1.include_router(auth.router)
     api_v1.include_router(repositories.router)
     api_v1.include_router(runs.router)
+    api_v1.include_router(evaluation.router)
     app.include_router(api_v1)
     return app

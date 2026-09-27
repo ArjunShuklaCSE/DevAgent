@@ -1,0 +1,13 @@
+diff --git a/kvconfig/parser.py b/kvconfig/parser.py
+index 95660ee..64bd87c 100644
+--- a/kvconfig/parser.py
++++ b/kvconfig/parser.py
+@@ -12,7 +12,7 @@ def parse(text: str) -> dict[str, str]:
+         line = raw.strip()
+         if not line or line.startswith("#"):
+             continue
+-        parts = line.split("=")
++        parts = line.split("=", 1)
+         if len(parts) < 2:
+             raise ValueError(f"invalid line: {raw!r}")
+         result[parts[0].strip()] = parts[1].strip()

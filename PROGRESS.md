@@ -13,7 +13,7 @@ Build follows the phased plan in the spec (Section 16). Each phase stops for rev
 | 6 | Agent loop | ✅ Done (real-LLM demo pending an API key) |
 | 7 | Frontend dashboard | ✅ Done |
 | 8 | GitHub auth, approval, PR creation | ✅ Done (live PR pending a token and test repo) |
-| 9 | Evaluation framework | Not started |
+| 9 | Evaluation framework | ✅ Done (real-model numbers pending an API key) |
 | 10 | MCP server, hardening, docs, deployment | Not started |
 
 ## Phase 0: Foundations (2026-09-27)
@@ -424,4 +424,62 @@ its own draft PR, report and verification.
   fine-grained PAT, plus a test repository, from Batmxn.
 - Only public repositories can be solved: cloning is anonymous (ADR 0017).
 - The GitHub App installation token is documented, not implemented.
+
+## Phase 9: Evaluation framework (2026-09-27)
+
+### Done
+- Dataset format and loader (`evaluation/dataset.py`, [docs/evaluation.md](docs/evaluation.md)).
+  The starter dataset has seven cases, one per sample repository, including the
+  adversarial `notebook` case. Hidden tests and gold patches live under
+  `evaluation/datasets/starter/`, outside what a run can see.
+- Scoring (`evaluation/scoring.py`):
+  - The final diff is applied with `git apply` to a fresh checkout, and the hidden
+    tests are written on top.
+  - A new sandbox installs dependencies and runs only the F2P and P2P node ids;
+    outcomes come from JUnit XML.
+  - A missing test counts as failing. Adversarial cases also check for injected
+    actions.
+- Harness (`evaluation/harness.py`):
+  - Each case is a normal agent run through `run_agent`, with a full trace in the
+    dashboard.
+  - Supports repeats and concurrency. Cases without a cassette are skipped for the
+    scripted model.
+  - Runs are never approved or published.
+  - Writes `eval_results` with per-test details (migration 0003).
+- Failure taxonomy, Wilson 95% intervals, medians (`evaluation/stats.py`, `metrics.py`).
+- Markdown report with configuration, prompt versions, dataset hash, per-difficulty
+  and per-case tables, and a side-by-side comparison (`evaluation/report.py`).
+- CLI: `devagent eval validate [--gold] | run | report [--compare]`.
+- API: `GET /api/v1/evaluation/runs` and `/runs/{id}`. The Evaluation page shows run
+  history, resolve rate with intervals, metric cards, a failure chart (Recharts), the
+  configuration, and cases linked to their agent runs. Empty state when there is no
+  data.
+- The datasets ship in the backend image; Compose mounts cassettes at
+  `tests/cassettes` so dataset paths resolve in the worker.
+
+### Verified (see phase report)
+- `devagent eval validate --gold` in the worker: all 7 cases OK. On the base, F2P is
+  0/2 and P2P has 0 regressions; with the gold patch, F2P is 2/2 and P2P has 0
+  regressions.
+- Scripted benchmark on the deployed stack:
+  - With the debug loop, 1/1 resolved (1 retry).
+  - Without it (`--max-fix-attempts 0`), 0/1 (`budget_exceeded`).
+  - Six cases are listed as not run.
+  - Report: `evaluation/reports/starter-scripted-ablation.md`.
+- Integration tests against a real sandbox:
+  - Scoring separates base, gold, a stale patch (`invalid_patch`) and a patch that
+    deletes passing tests (regressions).
+  - The harness plus ablation produce the expected stored results, and runs are left
+    in `awaiting_approval`.
+- Unit tests: dataset validation, JUnit id mapping, Wilson values, taxonomy,
+  adversarial detection, summary and report. Browser test: the Evaluation page shows
+  the stored runs and links cases to traces.
+
+### Known issues / deferred
+- No real-model benchmark yet. It needs an API key and model choice from Batmxn.
+  Until then, the only stored numbers are the scripted run's, and they are labelled
+  as such.
+- Only bundled sample repositories can be cases (ADR 0018). There is no SWE-bench
+  Lite adapter.
+- Scoring reinstalls dependencies for each case (about 10 s each).
 

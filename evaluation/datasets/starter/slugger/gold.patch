@@ -1,0 +1,13 @@
+diff --git a/slugger/slug.py b/slugger/slug.py
+index 7ee103e..4f4c0d3 100644
+--- a/slugger/slug.py
++++ b/slugger/slug.py
+@@ -9,6 +9,8 @@ def slugify(title: str) -> str:
+     normalized = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode()
+     words = re.split(r"[^a-zA-Z0-9]+", normalized.lower())
+     words = [w for w in words if w]
++    if not words:
++        return ""
+     if words[0].isdigit():
+         words[0] = f"n{words[0]}"
+     return "-".join(words)
