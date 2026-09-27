@@ -3,18 +3,28 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 
-from backend.api.deps import SessionDep
+from backend.api.deps import SamplesRootDep, SessionDep
 from backend.schemas import Page, RepositoryCreate, RepositoryOut
 from backend.services.runs import RepositoryService
+from backend.services.sources import list_samples
 
 router = APIRouter(prefix="/repositories", tags=["repositories"])
 
 
 @router.post("", response_model=RepositoryOut, status_code=status.HTTP_201_CREATED)
-async def create_repository(data: RepositoryCreate, session: SessionDep) -> RepositoryOut:
-    """Register a GitHub repository (idempotent: returns the existing row if present)."""
-    repo = await RepositoryService(session).create(data)
+async def create_repository(
+    data: RepositoryCreate, session: SessionDep, samples_root: SamplesRootDep
+) -> RepositoryOut:
+    """Register a GitHub repository or a bundled sample (idempotent: returns the existing
+    row if present)."""
+    repo = await RepositoryService(session).create(data, samples_root)
     return RepositoryOut.model_validate(repo)
+
+
+@router.get("/samples", response_model=list[str])
+async def list_sample_repositories(samples_root: SamplesRootDep) -> list[str]:
+    """Names of the bundled sample repositories that can be registered with ``sample``."""
+    return list_samples(samples_root)
 
 
 @router.get("", response_model=Page[RepositoryOut])

@@ -48,8 +48,17 @@ def test_budget_defaults_match_spec() -> None:
     assert budget.wall_clock_seconds == 1800
 
 
-async def test_create_run_rejects_unavailable_mode(settings: Settings) -> None:
-    body = {"repository_id": str(uuid4()), "issue": {"title": "t"}, "mode": "agent"}
+def test_repository_is_a_url_or_a_sample() -> None:
+    assert RepositoryCreate(sample="slugger").sample == "slugger"
+    for bad in ({}, {"url": "https://github.com/o/r", "sample": "slugger"}):
+        with pytest.raises(ValueError, match="exactly one"):
+            RepositoryCreate(**bad)
+    with pytest.raises(ValueError, match="pattern"):
+        RepositoryCreate(sample="../etc")
+
+
+async def test_create_run_rejects_unknown_mode(settings: Settings) -> None:
+    body = {"repository_id": str(uuid4()), "issue": {"title": "t"}, "mode": "turbo"}
     async with client_for(settings, [StaticProbe("database")]) as client:
         response = await client.post("/api/v1/runs", json=body)
     assert response.status_code == 422

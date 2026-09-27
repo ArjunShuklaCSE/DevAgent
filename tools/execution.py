@@ -20,6 +20,15 @@ def _sandbox(ctx: ToolContext) -> SandboxRunner:
     return ctx.sandbox
 
 
+def command_timeout(requested: float | None, ctx: ToolContext) -> float | None:
+    """The requested timeout, capped by the run's command timeout."""
+    if ctx.command_timeout_seconds is None:
+        return requested
+    if requested is None:
+        return ctx.command_timeout_seconds
+    return min(requested, ctx.command_timeout_seconds)
+
+
 def render_command(result: CommandResult) -> str:
     status = "timed out" if result.timed_out else f"exit code {result.exit_code}"
     if result.oom_killed:
@@ -66,7 +75,7 @@ class RunCommandTool(BaseTool[RunCommandInput]):
 
     async def run(self, args: RunCommandInput, ctx: ToolContext) -> ToolOutput:
         result = await _sandbox(ctx).run(
-            ctx.workspace, args.argv, timeout_seconds=args.timeout_seconds
+            ctx.workspace, args.argv, timeout_seconds=command_timeout(args.timeout_seconds, ctx)
         )
         return ToolOutput(text=render_command(result), data=command_data(result))
 
@@ -97,7 +106,10 @@ class RunTestsTool(BaseTool[RunTestsInput]):
             if item.startswith("-"):
                 raise ToolError("argument_not_allowed", f"selector {item!r} looks like an option")
         run = await _sandbox(ctx).run_tests(
-            ctx.workspace, ctx.test_command, args.selector, timeout_seconds=args.timeout_seconds
+            ctx.workspace,
+            ctx.test_command,
+            args.selector,
+            timeout_seconds=command_timeout(args.timeout_seconds, ctx),
         )
         data: dict[str, object] = {"command": command_data(run.result)}
         if run.report is None:

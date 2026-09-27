@@ -199,6 +199,8 @@ class AgentRun(IdMixin, TimestampMixin, Base):
     sandbox_image_digest: Mapped[str | None] = mapped_column(String(100))
     final_diff: Mapped[str | None] = mapped_column(Text)
     final_diff_sha256: Mapped[str | None] = mapped_column(String(64))
+    # What the agent produced for review: plan, reproduction, validation, PR text.
+    result: Mapped[dict[str, Any]] = mapped_column(default=dict, server_default="{}")
 
     # Accounting
     step_count: Mapped[int] = mapped_column(Integer, default=0)

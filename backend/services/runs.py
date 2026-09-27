@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import UUID
 
 import structlog
@@ -15,6 +16,7 @@ from backend.event_bus import EventBus
 from backend.queue import RunQueue
 from backend.schemas import RepositoryCreate, RunCreate
 from backend.services.event_store import append_event
+from backend.services.sources import list_samples
 from core.events import ErrorEvent, StatusChanged
 from core.run_status import InvalidTransitionError, RunStatus, ensure_transition, is_terminal
 from database.models import (
@@ -29,6 +31,8 @@ from database.models import (
 
 logger = structlog.get_logger(__name__)
 
+SAMPLE_OWNER = "sample"
+
 
 @dataclass(frozen=True)
 class ListResult[T]:
@@ -40,23 +44,25 @@ class RepositoryService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def create(self, data: RepositoryCreate) -> Repository:
-        owner, name = data.owner_and_name()
+    async def create(self, data: RepositoryCreate, samples_root: Path) -> Repository:
+        if data.sample is not None:
+            if data.sample not in list_samples(samples_root):
+                raise NotFoundError("Sample repository not found", {"sample": data.sample})
+            source, owner, name = RepositorySource.LOCAL, SAMPLE_OWNER, data.sample
+            clone_url = f"sample://{data.sample}"
+        else:
+            owner, name = data.owner_and_name()
+            source, clone_url = RepositorySource.GITHUB, f"https://github.com/{owner}/{name}.git"
         existing = await self._session.scalar(
             select(Repository).where(
-                Repository.source == RepositorySource.GITHUB,
+                Repository.source == source,
                 func.lower(Repository.owner) == owner.lower(),
                 func.lower(Repository.name) == name.lower(),
             )
         )
         if existing is not None:
             return existing
-        repo = Repository(
-            source=RepositorySource.GITHUB,
-            owner=owner,
-            name=name,
-            clone_url=f"https://github.com/{owner}/{name}.git",
-        )
+        repo = Repository(source=source, owner=owner, name=name, clone_url=clone_url)
         self._session.add(repo)
         await self._session.commit()
         return repo
@@ -96,6 +102,7 @@ class RunService:
             issue = Issue(
                 repository_id=repo.id,
                 source=IssueSource.PASTED,
+                number=data.issue.number,
                 title=data.issue.title,
                 body=data.issue.body,
             )
@@ -108,6 +115,7 @@ class RunService:
                 status=RunStatus.QUEUED,
                 config={
                     "budget": data.budget.model_dump(mode="json"),
+                    "model": data.model,
                     "dry_run_step_delay_ms": data.dry_run_step_delay_ms,
                 },
             )

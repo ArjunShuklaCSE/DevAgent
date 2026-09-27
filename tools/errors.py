@@ -9,6 +9,7 @@ DENIED_CODES = frozenset(
         "symlink_escape",
         "symlink_write_denied",
         "protected_path",
+        "read_only_path",
         "blocked_path",
         "executable_not_allowed",
         "module_not_allowed",

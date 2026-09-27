@@ -71,6 +71,17 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr | None = None
     openai_base_url: str = "https://api.openai.com"
     prompts_path: str = "agent/prompts"
+    # Replays a ScriptedLLM cassette when the model's provider is "scripted" (tests and
+    # key-free demos only; see ADR 0015).
+    llm_script_path: str | None = None
+
+    # Agent (worker only; see ADR 0015)
+    sample_repos_path: str = "sample_repos"
+    public_web_url: str = "http://localhost:3000"  # links to run traces in PR text
+    agent_localizer_rounds: int = Field(default=12, ge=1, le=50)
+    agent_reproducer_rounds: int = Field(default=10, ge=1, le=50)
+    agent_editor_rounds: int = Field(default=12, ge=1, le=50)
+    keep_workspaces: bool = False  # keep run directories after the run for debugging
 
 
 @lru_cache(maxsize=1)
