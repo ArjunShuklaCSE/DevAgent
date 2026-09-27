@@ -37,6 +37,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = [
     "core",
+    "workspace",
     "backend",
     "agent",
     "tools",
@@ -64,7 +65,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "ANN", "PLR2004", "S105", "S106"]
+"tests/**" = ["S101", "ANN", "PLR2004", "S105", "S106", "S603", "S607"]
 "database/migrations/versions/**" = ["E501"]  # generated CHECK constraint strings
 
 [tool.ruff.lint.flake8-bugbear]
@@ -78,7 +79,7 @@ warn_unreachable = true
 pretty = true
 plugins = ["pydantic.mypy"]
 files = [
-    "core", "backend", "agent", "tools", "sandbox", "llm",
+    "core", "workspace", "backend", "agent", "tools", "sandbox", "llm",
     "evaluation", "database", "mcp_server", "tests",
 ]
 
@@ -103,15 +104,15 @@ filterwarnings = ["error"]
 # Enforces the dependency rule from the spec (Section 4.2) in CI.
 [tool.importlinter]
 root_packages = [
-    "core",
+    "core", "workspace",
     "backend", "agent", "tools", "sandbox", "llm",
     "evaluation", "database", "mcp_server",
 ]
 
 [[tool.importlinter.contracts]]
-name = "Leaf layers (tools, sandbox, llm) do not import backend or agent"
+name = "Leaf layers (tools, sandbox, llm, workspace) do not import backend or agent"
 type = "forbidden"
-source_modules = ["tools", "sandbox", "llm"]
+source_modules = ["tools", "sandbox", "llm", "workspace"]
 forbidden_modules = ["backend", "agent"]
 
 [[tool.importlinter.contracts]]
@@ -124,7 +125,7 @@ forbidden_modules = ["backend"]
 name = "Core domain kernel imports no other DevAgent package"
 type = "forbidden"
 source_modules = ["core"]
-forbidden_modules = ["backend", "agent", "tools", "sandbox", "llm", "evaluation", "database", "mcp_server"]
+forbidden_modules = ["backend", "agent", "tools", "sandbox", "llm", "evaluation", "database", "mcp_server", "workspace"]
 
 [[tool.importlinter.contracts]]
 name = "Database models do not import application layers"

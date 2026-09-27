@@ -5,8 +5,8 @@ Build follows the phased plan in the spec (Section 16). Each phase stops for rev
 | Phase | Name | Status |
 |------:|------|--------|
 | 0 | Foundations | ✅ Done |
-| 1 | Data model, run API, live events | ✅ Done, awaiting confirmation |
-| 2 | Safe cloning & repository analysis | Not started |
+| 1 | Data model, run API, live events | ✅ Done |
+| 2 | Safe cloning & repository analysis | ✅ Done |
 | 3 | Docker sandbox | Not started |
 | 4 | Tools | Not started |
 | 5 | LLM layer, budgets, prompt structure | Not started |
@@ -84,6 +84,35 @@ Build follows the phased plan in the spec (Section 16). Each phase stops for rev
   changes, so images could run stale code. The Dockerfile now installs the project with
   `--no-cache`.
 
+## Phase 2: Safe cloning & repository analysis (2026-09-27)
+
+Batmxn asked for all remaining phases to run without stopping; each phase still gets
+its own draft PR, report and verification.
+
+### Done
+- `workspace/`: `GitCloner` with the hardening in ADR 0010 (no hooks, no host config,
+  symlinks as files, no submodules/LFS, URL allowlist, ref validation, timeout, size and
+  file-count limits enforced during and after fetch, token never persisted);
+  `copy_local_repository` for sample repos.
+- `agent/analysis/`: bounded tree scanner, `PythonAdapter`, `StaticRepositoryAnalyzer`
+  producing a `RepoProfile` with evidence (ADR 0011).
+- `sample_repos/`: six buggy repos covering different layouts, plus the adversarial
+  `notebook` repo with injections in its README, code comment and CI file.
+- The backend image now uses `python:3.12-bookworm`, which includes git.
+- New settings: workspace root, repo byte/file limits, clone timeout.
+
+### Verified
+- Clone security tests run against a real smart-HTTP git server (`git http-backend`):
+  host hooks don't run, symlinks are neutralized, submodules aren't fetched, an
+  oversized repo is rejected (file count) and an oversized download is killed (bytes),
+  option-injection refs are rejected, the token is sent but never written to disk.
+- The analyzer reports pytest + the right install/test commands for all 7 sample repos.
+
+### Known issues / deferred
+- GitHub API pre-check of repo size before cloning is not implemented; limits are
+  enforced while fetching instead.
+- Clone is not yet called from a run; the agent loop wires it in (Phase 6).
+
 ## Next
-Phase 2: safe cloning (shallow, hooks disabled, no submodules/LFS, size and file-count
-limits) and the static repository analyzer, plus the first sample repos.
+Phase 3: Docker sandbox (image, limits, network modes, command policy, output capture,
+orphan reaper, dependency install) and the worker's Docker access decision (ADR 0007).

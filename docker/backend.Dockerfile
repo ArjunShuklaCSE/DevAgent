@@ -4,7 +4,9 @@
 # Optional build secret `extra_ca`: a PEM bundle for TLS-intercepting proxies. It is
 # only mounted during dependency download and never stored in the image.
 
-ARG PYTHON_IMAGE=python:3.12-slim
+# The full (non-slim) image ships git, which the worker needs to clone repositories
+# (hardened invocation, see workspace/clone.py), without an apt step at build time.
+ARG PYTHON_IMAGE=python:3.12-bookworm
 
 FROM ${PYTHON_IMAGE} AS builder
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -26,6 +28,7 @@ RUN --mount=type=secret,id=extra_ca,required=false \
     uv sync --frozen --no-dev --no-install-project
 
 COPY core ./core
+COPY workspace ./workspace
 COPY backend ./backend
 COPY agent ./agent
 COPY tools ./tools

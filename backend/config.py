@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     health_check_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
     sse_keepalive_seconds: float = Field(default=15.0, gt=0, le=120)
 
+    # Workspaces (worker only)
+    workspace_root: str = "/tmp/devagent/workspaces"  # noqa: S108 - per-run subdirs, cleaned up
+    max_repo_bytes: int = Field(default=200 * 1024 * 1024, gt=0)
+    max_repo_files: int = Field(default=20_000, gt=0)
+    clone_timeout_seconds: float = Field(default=300, gt=0, le=3600)
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
