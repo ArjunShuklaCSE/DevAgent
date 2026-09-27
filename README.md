@@ -208,7 +208,7 @@ REPO=$(curl -s -X POST localhost:8000/api/v1/repositories \
 RUN=$(curl -s -X POST localhost:8000/api/v1/runs -H 'content-type: application/json' \
   -d "{\"repository_id\":\"$REPO\",\"model\":\"scripted\",\"issue\":{\"number\":3,\"title\":\"slugify crashes on titles without letters\",\"body\":\"slugify raises IndexError: list index out of range.\"}}" \
   | jq -r .id)
-curl -N localhost:8000/api/v1/runs/$RUN/events          # live SSE stream
+curl -N localhost:8000/api/v1/runs/$RUN/events          # live SSE stream; Ctrl-C to stop
 curl -s localhost:8000/api/v1/runs/$RUN/trace -o trace.json
 ```
 
