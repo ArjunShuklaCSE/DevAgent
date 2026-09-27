@@ -1,0 +1,58 @@
+# Command policy for the sandbox (spec 6.3). Loaded by sandbox/policy.py.
+#
+# Commands are argv lists, never shell strings: there is no shell in the loop, so
+# pipes, redirects and `;` have no meaning. The container (no network, read-only root,
+# dropped capabilities, resource limits) is the security boundary; this policy is
+# defence in depth that keeps the agent to the small set of tools it needs and makes
+# every command's cost bounded and predictable.
+version: 1
+
+defaults:
+  timeout_seconds: 120
+  max_output_bytes: 65536   # per stream; head and tail are kept, the middle is cut
+  max_args: 64
+  max_arg_length: 4096
+
+# Absolute paths (and relative paths resolved from /workspace) in arguments must stay
+# under one of these roots.
+allowed_path_roots: [/workspace, /tmp, /reports, /env]
+
+profiles:
+  # Commands the agent and the test runner may run. Network is always off.
+  run:
+    network: false
+    executables:
+      python:
+        aliases: [python3]
+        timeout_seconds: 300
+        # `python <script>` or `python -m <module>`; interpreter flags such as -c are
+        # rejected so every piece of executed code exists as a file in the workspace.
+        modules: [pytest, unittest, mypy, ruff, flake8, black, compileall, doctest]
+      pytest: {timeout_seconds: 300}
+      ruff: {}
+      mypy: {timeout_seconds: 300}
+      flake8: {}
+      black: {}
+      ls: {}
+      cat: {}
+      head: {}
+      tail: {}
+      wc: {}
+      grep: {}
+      diff: {}
+      find:
+        deny_args: [-exec, -execdir, -ok, -okdir, -delete, -fprint, -fprint0, -fprintf, -fls]
+
+  # Dependency installation, run by the system (never chosen by the model) before the
+  # agent starts. The only profile that gets network access.
+  install:
+    network: true
+    executables:
+      python:
+        aliases: [python3]
+        timeout_seconds: 600
+        max_output_bytes: 131072
+        modules: [pip, venv]
+        # Only `pip install`; no alternative indexes or trusted hosts from repo files.
+        module_subcommands: {pip: [install]}
+        deny_args: [--index-url, -i, --extra-index-url, --trusted-host, --find-links, -f, --target, -t, --prefix, --root, --user]
