@@ -26,13 +26,16 @@ import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final
+from socket import SocketIO
+from typing import Final
 
 import structlog
 from docker import DockerClient
-from docker.errors import APIError, ImageNotFound, NotFound
+from docker.errors import APIError, DockerException, ImageNotFound, NotFound
 from docker.models.containers import Container
 from docker.types import LogConfig, Mount
+from docker.utils.socket import frames_iter
+from requests.exceptions import RequestException
 
 from sandbox.junit import JUnitError, TestReport, parse_junit_file
 from sandbox.output import BoundedBuffer
@@ -53,6 +56,9 @@ CONTAINER_CA: Final = "/env/.devagent-ca.pem"
 # Output beyond this is not even streamed: the command is killed (log flooding).
 HARD_OUTPUT_LIMIT_BYTES: Final = 64 * 1024 * 1024
 _EXIT_WAIT_SECONDS: Final = 30.0
+
+_STDOUT: Final = 1
+_STDERR: Final = 2
 
 
 class SandboxError(Exception):
@@ -148,6 +154,13 @@ class DockerSandbox:
     def policy(self) -> CommandPolicy:
         return self._policy
 
+    @property
+    def config(self) -> SandboxConfig:
+        return self._config
+
+    def close(self) -> None:
+        self._client.close()
+
     # ------------------------------------------------------------------ setup
     async def image_id(self) -> str:
         """Return the local image ID of the sandbox image (recorded with every run)."""
@@ -158,8 +171,11 @@ class DockerSandbox:
             except ImageNotFound as exc:
                 raise SandboxError(
                     "sandbox_image_missing",
-                    f"sandbox image {self._config.image} not found; build docker/sandbox.Dockerfile",
+                    f"sandbox image {self._config.image} not found "
+                    "(build it from docker/sandbox.Dockerfile)",
                 ) from exc
+            except (DockerException, RequestException) as exc:
+                raise SandboxError("docker_unavailable", f"Docker is not reachable: {exc}") from exc
             return str(image.id)
 
         return await asyncio.to_thread(inspect)
@@ -238,7 +254,11 @@ class DockerSandbox:
         return TestRun(result=result, report=report)
 
     async def _execute(
-        self, workspace: RunWorkspace, argv: tuple[str, ...], profile: Profile, limits: CommandLimits
+        self,
+        workspace: RunWorkspace,
+        argv: tuple[str, ...],
+        profile: Profile,
+        limits: CommandLimits,
     ) -> CommandResult:
         started = time.monotonic()
         stdout = BoundedBuffer(limits.max_output_bytes)
@@ -262,6 +282,7 @@ class DockerSandbox:
         finally:
             # Also runs on cancellation: removing the container stops the command.
             await asyncio.to_thread(_remove_quietly, container)
+            _close_socket(stream)
 
         result = CommandResult(
             argv=argv,
@@ -287,8 +308,12 @@ class DockerSandbox:
         return result
 
     def _create_and_start(
-        self, workspace: RunWorkspace, argv: tuple[str, ...], profile: Profile, limits: CommandLimits
-    ) -> tuple[Container, Any]:
+        self,
+        workspace: RunWorkspace,
+        argv: tuple[str, ...],
+        profile: Profile,
+        limits: CommandLimits,
+    ) -> tuple[Container, SocketIO]:
         cfg = self._config
         try:
             container = self._client.containers.create(
@@ -320,11 +345,11 @@ class DockerSandbox:
                 detach=True,
             )
             # Attach before start so no output is lost, then start.
-            stream = self._client.api.attach(
-                container.id, stdout=True, stderr=True, stream=True, demux=True
+            stream = self._client.api.attach_socket(
+                str(container.id), params={"stdout": 1, "stderr": 1, "stream": 1}
             )
             container.start()
-        except (APIError, ImageNotFound) as exc:
+        except (DockerException, RequestException) as exc:
             raise SandboxError("sandbox_start_failed", f"could not start sandbox: {exc}") from exc
         return container, stream
 
@@ -393,17 +418,30 @@ class DockerSandbox:
         return removed
 
 
-def _pump(stream: Any, stdout: BoundedBuffer, stderr: BoundedBuffer, container: Container) -> bool:
+def _pump(
+    stream: SocketIO,
+    stdout: BoundedBuffer,
+    stderr: BoundedBuffer,
+    container: Container,
+) -> bool:
     """Copy the attach stream into the buffers; kill the container on output flooding."""
-    for out, err in stream:
-        if out:
-            stdout.write(out)
-        if err:
-            stderr.write(err)
+    for stream_id, data in frames_iter(stream, tty=False):  # type: ignore[no-untyped-call]
+        if stream_id == _STDOUT:
+            stdout.write(data)
+        elif stream_id == _STDERR:
+            stderr.write(data)
         if stdout.total_bytes + stderr.total_bytes > HARD_OUTPUT_LIMIT_BYTES:
             _kill_quietly(container)
             return True
     return False
+
+
+def _close_socket(stream: SocketIO) -> None:
+    """Close the attach stream and the socket under it (SocketIO.close leaves it open)."""
+    for resource in (stream, getattr(stream, "_sock", None)):
+        if resource is not None:
+            with contextlib.suppress(OSError):
+                resource.close()
 
 
 def _exit_status(container: Container) -> tuple[int | None, bool]:

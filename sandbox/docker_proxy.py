@@ -50,6 +50,18 @@ _SCOPED_ROUTES: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("DELETE", re.compile(rf"^/containers/{_ID}$")),
 )
 _SAFE_SECURITY_OPTS: Final = frozenset({"no-new-privileges", "no-new-privileges:true"})
+_FORBIDDEN_HOST_KEYS: Final = (
+    "Devices",
+    "DeviceRequests",
+    "DeviceCgroupRules",
+    "VolumesFrom",
+    "Links",
+    "Sysctls",
+    "PortBindings",
+    "PublishAllPorts",
+    "CgroupParent",
+    "OomKillDisable",
+)
 
 
 class ProxySettings(BaseSettings):
@@ -80,20 +92,32 @@ def validate_create(body: object, settings: ProxySettings) -> list[str]:
     """Return every reason the container create request is unsafe (empty = allowed)."""
     if not isinstance(body, dict):
         return ["body must be a JSON object"]
-    problems: list[str] = []
     host: dict[str, Any] = body.get("HostConfig") or {}
-    labels = body.get("Labels") or {}
+    return [
+        *_identity_problems(body, settings),
+        *_privilege_problems(host),
+        *_isolation_problems(body, host, settings),
+        *_limit_problems(host, settings),
+        *_mount_problems(host, settings),
+    ]
 
+
+def _identity_problems(body: dict[str, Any], settings: ProxySettings) -> list[str]:
+    problems = []
     if body.get("Image") not in settings.allowed_images:
         problems.append(f"image {body.get('Image')!r} is not allowed")
-    if labels.get(MANAGED_LABEL) != "true":
+    if (body.get("Labels") or {}).get(MANAGED_LABEL) != "true":
         problems.append(f"label {MANAGED_LABEL}=true is required")
     user = str(body.get("User") or "")
     if not user or user.split(":", 1)[0] in ("0", "root"):
         problems.append("container must run as a non-root user")
     if body.get("Volumes"):
         problems.append("anonymous volumes are not allowed")
+    return problems
 
+
+def _privilege_problems(host: dict[str, Any]) -> list[str]:
+    problems = []
     if host.get("Privileged"):
         problems.append("privileged mode is not allowed")
     if host.get("CapAdd"):
@@ -107,6 +131,14 @@ def validate_create(body: object, settings: ProxySettings) -> list[str]:
         problems.append(f"security options not allowed: {sorted(extra)}")
     if host.get("ReadonlyRootfs") is not True:
         problems.append("read-only root filesystem is required")
+    problems += [f"{key} is not allowed" for key in _FORBIDDEN_HOST_KEYS if host.get(key)]
+    return problems
+
+
+def _isolation_problems(
+    body: dict[str, Any], host: dict[str, Any], settings: ProxySettings
+) -> list[str]:
+    problems = []
     for key in ("PidMode", "IpcMode", "UTSMode", "UsernsMode", "CgroupnsMode"):
         value = str(host.get(key) or "")
         if value == "host" or value.startswith("container:"):
@@ -119,23 +151,6 @@ def validate_create(body: object, settings: ProxySettings) -> list[str]:
         problems.append("extra network endpoints are not allowed")
     if str(host.get("Runtime") or "") not in settings.allowed_runtimes:
         problems.append(f"runtime {host.get('Runtime')!r} is not allowed")
-    for key in (
-        "Devices",
-        "DeviceRequests",
-        "DeviceCgroupRules",
-        "VolumesFrom",
-        "Links",
-        "Sysctls",
-        "PortBindings",
-        "CgroupParent",
-    ):
-        if host.get(key):
-            problems.append(f"{key} is not allowed")
-    if host.get("PublishAllPorts") or host.get("OomKillDisable") or host.get("Privileged"):
-        problems.append("PublishAllPorts/OomKillDisable are not allowed")
-
-    problems += _limit_problems(host, settings)
-    problems += _mount_problems(host, settings)
     return problems
 
 
@@ -180,7 +195,10 @@ def _source_allowed(source: str, kind: str, settings: ProxySettings) -> bool:
     if kind == "volume":
         return source in settings.allowed_volumes
     path = posixpath.normpath(source)
-    return any(path == root or path.startswith(root.rstrip("/") + "/") for root in settings.allowed_bind_roots)
+    return any(
+        path == root or path.startswith(root.rstrip("/") + "/")
+        for root in settings.allowed_bind_roots
+    )
 
 
 def _list_is_filtered(query: str) -> bool:
@@ -239,6 +257,24 @@ def parse_head(head: bytes) -> Request:
     return Request(method=method, target=target, version=version, headers=headers)
 
 
+async def _read_request(
+    head: bytes, reader: asyncio.StreamReader
+) -> tuple[Request, bytes] | Denied:
+    if len(head) > MAX_HEAD_BYTES:
+        return Denied(400, "request head too large")
+    try:
+        request = parse_head(head[:-4])
+        length = int(request.header("Content-Length") or 0)
+    except ValueError:
+        return Denied(400, "malformed request")
+    if request.header("Transfer-Encoding"):
+        return Denied(400, "chunked request bodies are not supported")
+    if not 0 <= length <= MAX_BODY_BYTES:
+        return Denied(400, "request body too large")
+    body = await reader.readexactly(length) if length else b""
+    return request, body
+
+
 def _response(status: int, reason: str) -> bytes:
     body = json.dumps({"message": f"devagent docker proxy: {reason}"}).encode()
     phrase = {400: "Bad Request", 403: "Forbidden", 404: "Not Found", 502: "Bad Gateway"}
@@ -284,23 +320,11 @@ class DockerProxy:
             head = await reader.readuntil(b"\r\n\r\n")
         except asyncio.IncompleteReadError:
             return False
-        if len(head) > MAX_HEAD_BYTES:
-            writer.write(_response(400, "request head too large"))
+        parsed = await _read_request(head, reader)
+        if isinstance(parsed, Denied):
+            writer.write(_response(parsed.status, parsed.reason))
             return False
-        try:
-            request = parse_head(head[:-4])
-        except ValueError:
-            writer.write(_response(400, "malformed request"))
-            return False
-
-        if request.header("Transfer-Encoding"):
-            writer.write(_response(400, "chunked request bodies are not supported"))
-            return False
-        length = int(request.header("Content-Length") or 0)
-        if length > MAX_BODY_BYTES:
-            writer.write(_response(400, "request body too large"))
-            return False
-        body = await reader.readexactly(length) if length else b""
+        request, body = parsed
 
         denied = await self._authorize(request, body)
         log = logger.bind(method=request.method, path=request.path)
@@ -310,53 +334,63 @@ class DockerProxy:
             await writer.drain()
             return True
         log.debug("docker_request_allowed")
+        await self._forward(request, body, reader, writer)
+        # The upstream response was delimited by closing the connection; the client
+        # cannot know where it ended otherwise, so close ours too.
+        return False
 
+    async def _forward(
+        self,
+        request: Request,
+        body: bytes,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+    ) -> None:
         upgrade = (request.header("Upgrade") or "").lower() == "tcp"
         try:
             up_reader, up_writer = await self._open_upstream()
         except OSError as exc:
             writer.write(_response(502, f"docker daemon unavailable: {exc}"))
-            return False
+            return
         try:
             up_writer.write(request.encode(body, keep_alive_upgrade=upgrade))
             await up_writer.drain()
             if upgrade:
                 await asyncio.gather(_pipe(up_reader, writer), _pipe(reader, up_writer))
-                return False
-            await _pipe(up_reader, writer)
+            else:
+                await _pipe(up_reader, writer)
         finally:
             up_writer.close()
-        # The upstream response was delimited by closing the connection; the client
-        # cannot know where it ended otherwise, so close ours too.
-        return False
 
     async def _authorize(self, request: Request, body: bytes) -> Denied | None:
         method, path = request.method, request.path
         if method in ("GET", "HEAD") and path in ("/_ping", "/version"):
             return None
         if method == "GET" and path == "/containers/json":
-            if _list_is_filtered(request.query):
-                return None
-            return Denied(403, f"container lists must filter on {MANAGED_LABEL}=true")
+            ok = _list_is_filtered(request.query)
+            return (
+                None if ok else Denied(403, f"container lists must filter on {MANAGED_LABEL}=true")
+            )
         if method == "POST" and path == "/containers/create":
-            try:
-                parsed = json.loads(body or b"null")
-            except json.JSONDecodeError:
-                return Denied(400, "invalid JSON body")
-            problems = validate_create(parsed, self._settings)
-            return Denied(403, "; ".join(problems)) if problems else None
+            return self._authorize_create(body)
         if method == "GET" and path.startswith("/images/") and path.endswith("/json"):
             name = path.removeprefix("/images/").removesuffix("/json")
-            if name in self._settings.allowed_images:
-                return None
-            return Denied(403, f"image {name!r} is not allowed")
+            ok = name in self._settings.allowed_images
+            return None if ok else Denied(403, f"image {name!r} is not allowed")
         for route_method, pattern in _SCOPED_ROUTES:
             match = pattern.match(path)
             if match and method == route_method:
-                if await self._is_managed(match.group("id")):
-                    return None
-                return Denied(403, "container is not a DevAgent sandbox")
+                ok = await self._is_managed(match.group("id"))
+                return None if ok else Denied(403, "container is not a DevAgent sandbox")
         return Denied(403, f"{method} {path} is not allowed")
+
+    def _authorize_create(self, body: bytes) -> Denied | None:
+        try:
+            parsed = json.loads(body or b"null")
+        except json.JSONDecodeError:
+            return Denied(400, "invalid JSON body")
+        problems = validate_create(parsed, self._settings)
+        return Denied(403, "; ".join(problems)) if problems else None
 
     async def _is_managed(self, container_id: str) -> bool:
         reader, writer = await self._open_upstream()
@@ -403,7 +437,9 @@ async def _main() -> None:
 
     logging.basicConfig(level=settings.log_level)
     structlog.configure(
-        wrapper_class=structlog.make_filtering_bound_logger(logging.getLevelName(settings.log_level))
+        wrapper_class=structlog.make_filtering_bound_logger(
+            logging.getLevelName(settings.log_level)
+        )
     )
     server = await DockerProxy(settings).serve()
     logger.info(
