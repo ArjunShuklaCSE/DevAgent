@@ -6,10 +6,26 @@ from fastapi.responses import StreamingResponse
 
 from backend.api.deps import EventBusDep, RunServiceDep, SessionFactoryDep
 from backend.errors import AppError, NotFoundError
-from backend.schemas import CancelRequest, Page, RunCreate, RunOut, RunSummary, StepOut
+from backend.schemas import (
+    ApprovalOut,
+    ApprovalRequest,
+    CancelRequest,
+    DiffOut,
+    LlmCallOut,
+    Page,
+    RejectRequest,
+    RunCreate,
+    RunOut,
+    RunSummary,
+    StepOut,
+    TestRunOut,
+    ToolCallOut,
+)
 from backend.services.event_store import SqlEventReader
+from backend.services.run_details import RunDetails
 from backend.sse import InvalidLastEventIdError, parse_last_event_id, stream_run_events
 from core.run_status import RunStatus
+from database.models import ApprovalDecision
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -53,6 +69,48 @@ async def cancel_run(
 ) -> RunOut:
     """Cancel a run that has not finished. Returns 409 if it already reached a final state."""
     return RunOut.model_validate(await service.cancel(run_id, body.reason if body else None))
+
+
+@router.post("/{run_id}/approve", response_model=RunOut)
+async def approve_run(run_id: UUID, body: ApprovalRequest, service: RunServiceDep) -> RunOut:
+    """Approve the run's diff. ``diff_sha256`` must match the diff shown for review
+    (409 ``stale_diff`` otherwise)."""
+    run = await service.decide(run_id, ApprovalDecision.APPROVED, body.comment, body.diff_sha256)
+    return RunOut.model_validate(run)
+
+
+@router.post("/{run_id}/reject", response_model=RunOut)
+async def reject_run(
+    run_id: UUID, service: RunServiceDep, body: RejectRequest | None = None
+) -> RunOut:
+    run = await service.decide(run_id, ApprovalDecision.REJECTED, body.comment if body else None)
+    return RunOut.model_validate(run)
+
+
+@router.get("/{run_id}/tool-calls", response_model=list[ToolCallOut])
+async def list_tool_calls(run_id: UUID, factory: SessionFactoryDep) -> list[ToolCallOut]:
+    return [ToolCallOut.model_validate(t) for t in await RunDetails(factory).tool_calls(run_id)]
+
+
+@router.get("/{run_id}/llm-calls", response_model=list[LlmCallOut])
+async def list_llm_calls(run_id: UUID, factory: SessionFactoryDep) -> list[LlmCallOut]:
+    return [LlmCallOut.model_validate(c) for c in await RunDetails(factory).llm_calls(run_id)]
+
+
+@router.get("/{run_id}/test-runs", response_model=list[TestRunOut])
+async def list_test_runs(run_id: UUID, factory: SessionFactoryDep) -> list[TestRunOut]:
+    return [TestRunOut.model_validate(t) for t in await RunDetails(factory).test_runs(run_id)]
+
+
+@router.get("/{run_id}/diff", response_model=DiffOut)
+async def get_diff(run_id: UUID, factory: SessionFactoryDep) -> DiffOut:
+    """The final diff, its SHA-256 (what approval binds to), review flags and validation."""
+    return DiffOut.model_validate(await RunDetails(factory).diff(run_id))
+
+
+@router.get("/{run_id}/approvals", response_model=list[ApprovalOut])
+async def list_approvals(run_id: UUID, factory: SessionFactoryDep) -> list[ApprovalOut]:
+    return [ApprovalOut.model_validate(a) for a in await RunDetails(factory).approvals(run_id)]
 
 
 @router.get("/{run_id}/steps", response_model=list[StepOut])

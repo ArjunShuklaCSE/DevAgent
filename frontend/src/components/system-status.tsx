@@ -16,10 +16,10 @@ export function SystemStatus({ health }: { health: SystemHealth }) {
     return (
       <section
         role="alert"
-        className="rounded-md border border-red-900/60 bg-red-950/30 p-4 text-sm"
+        className="rounded-md border border-red-200 bg-red-50 p-4 text-sm dark:border-red-900/60 dark:bg-red-950/30"
       >
-        <p className="font-medium text-red-300">API unreachable</p>
-        <p className="mt-1 text-red-200/80">{health.message}</p>
+        <p className="font-medium text-red-700 dark:text-red-300">API unreachable</p>
+        <p className="mt-1 text-red-600 dark:text-red-200/80">{health.message}</p>
       </section>
     );
   }
@@ -29,15 +29,18 @@ export function SystemStatus({ health }: { health: SystemHealth }) {
   const healthy = report.status === "ok";
 
   return (
-    <section aria-label="System status" className="rounded-md border border-zinc-800 text-sm">
-      <header className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+    <section
+      aria-label="System status"
+      className="rounded-md border border-zinc-200 bg-white text-sm dark:border-zinc-800 dark:bg-zinc-900/40"
+    >
+      <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <div className="flex items-center gap-2">
           <StatusDot ok={healthy} />
           <span className="font-medium">{healthy ? "All systems operational" : "Degraded"}</span>
         </div>
         <span className="font-mono text-xs text-zinc-500">api v{report.version}</span>
       </header>
-      <ul className="divide-y divide-zinc-800">
+      <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
         {entries.length === 0 ? (
           <li className="px-4 py-3 text-zinc-500">No data yet</li>
         ) : (

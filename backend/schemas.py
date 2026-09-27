@@ -117,9 +117,22 @@ class IssueOut(_Out):
     body: str
 
 
+class RepositoryBrief(_Out):
+    id: UUID
+    source: RepositorySource
+    owner: str
+    name: str
+
+
+class IssueBrief(_Out):
+    number: int | None
+    title: str
+
+
 class RunOut(_Out):
     id: UUID
     repository_id: UUID
+    repository: RepositoryBrief
     issue: IssueOut
     mode: RunMode
     status: RunStatus
@@ -145,11 +158,18 @@ class RunOut(_Out):
 class RunSummary(_Out):
     id: UUID
     repository_id: UUID
+    repository: RepositoryBrief
+    issue: IssueBrief
     mode: RunMode
     status: RunStatus
+    status_reason: str | None
     step_count: int
+    fix_attempts: int
+    input_tokens: int
+    output_tokens: int
     cost_usd: Decimal
     created_at: datetime
+    started_at: datetime | None
     finished_at: datetime | None
 
 
@@ -181,3 +201,96 @@ class EventOut(BaseModel):
     type: str
     created_at: datetime
     payload: dict[str, Any]
+
+
+# --------------------------------------------------------------------------- run details
+
+
+class ToolCallOut(_Out):
+    id: UUID
+    step_id: UUID | None
+    tool_name: str
+    capability: str
+    input: dict[str, Any]
+    output_truncated: str | None
+    output_size_bytes: int
+    status: str
+    error: dict[str, Any] | None
+    duration_ms: int
+    created_at: datetime
+
+
+class LlmCallOut(_Out):
+    id: UUID
+    step_id: UUID | None
+    provider: str
+    model: str
+    component: str
+    prompt_version: str
+    attempt: int
+    input_tokens: int
+    output_tokens: int
+    cost_usd: Decimal
+    latency_ms: int
+    status: str
+    rationale: str | None
+    error: dict[str, Any] | None
+    created_at: datetime
+
+
+class TestResultOut(_Out):
+    __test__ = False
+
+    node_id: str
+    outcome: str
+    duration_ms: int | None
+    message: str | None
+
+
+class TestRunOut(_Out):
+    __test__ = False
+
+    id: UUID
+    step_id: UUID | None
+    kind: str
+    command: list[Any]
+    exit_code: int | None
+    timed_out: bool
+    duration_ms: int
+    passed: int
+    failed: int
+    errors: int
+    skipped: int
+    created_at: datetime
+    results: list[TestResultOut]
+
+
+class DiffOut(BaseModel):
+    run_id: UUID
+    diff: str | None
+    sha256: str | None
+    review_flags: list[dict[str, Any]]
+    validation: dict[str, Any] | None
+
+
+class ApprovalRequest(BaseModel):
+    """Approve exactly the diff the reviewer saw: its SHA-256 must match the run's."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    diff_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    comment: str | None = Field(default=None, max_length=4000)
+
+
+class RejectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    comment: str | None = Field(default=None, max_length=4000)
+
+
+class ApprovalOut(_Out):
+    id: UUID
+    decision: str
+    diff_sha256: str
+    comment: str | None
+    created_at: datetime

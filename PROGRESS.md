@@ -11,7 +11,7 @@ Build follows the phased plan in the spec (Section 16). Each phase stops for rev
 | 4 | Tools | ✅ Done |
 | 5 | LLM layer, budgets, prompt structure | ✅ Done |
 | 6 | Agent loop | ✅ Done (real-LLM demo pending an API key) |
-| 7 | Frontend dashboard | Not started |
+| 7 | Frontend dashboard | ✅ Done |
 | 8 | GitHub auth, approval, PR creation | Not started |
 | 9 | Evaluation framework | Not started |
 | 10 | MCP server, hardening, docs, deployment | Not started |
@@ -255,11 +255,6 @@ its own draft PR, report and verification.
 - Role prompts for each component and the `budget_exceeded` transition come with the
   orchestrator (Phase 6).
 
-## Next
-Phase 6: orchestrator and all components (issue analyzer, localizer, reproducer,
-planner, editor, debugger, validator, PR writer), reproduction-first flow with a
-bounded debug loop, and a ScriptedLLM integration run that reaches `awaiting_approval`.
-
 ## Phase 6: Agent loop (2026-09-27)
 
 ### Done
@@ -323,3 +318,49 @@ bounded debug loop, and a ScriptedLLM integration run that reaches `awaiting_app
 - An optional LangGraph adapter is not built. The `Orchestrator` interface is the
   extension point.
 - OpenTelemetry spans are still not emitted; structured logs carry `run_id` and `step_id`.
+
+## Phase 7: Dashboard (2026-09-27)
+
+### Done
+- Pages (Next.js 16, React 19, Tailwind 4, TanStack Query):
+  - **Home:** new-run form with a bundled sample or a public GitHub URL, the issue,
+    and optional model and budget. Also shows system status and recent runs.
+  - **Runs:** history table with a status filter.
+  - **Run detail:** live timeline with each step's summary, error and rationale. Stats
+    for elapsed time, steps, fix attempts, tokens, cost and model. Tabs for the
+    terminal, tool calls, LLM calls, plan and tests. A Cancel button, an injection-flag
+    badge, a failure panel, and a reproducibility section (base commit, image, diff
+    hash, prompt versions).
+  - **Review:** split or unified diff (`react-diff-view`), validation checks, review
+    flags, the generated PR description, and Approve or Reject with a comment.
+  - **Evaluation:** empty state until Phase 9.
+- Every page has loading, empty and error states. The run page shows the live
+  connection state and a reconnecting banner.
+- Dark by default, with a light toggle that persists and does not flash on load.
+- Same-origin proxy `app/api/v1/[...path]` streams API responses, including SSE, to the
+  browser (ADR 0016).
+- API additions for the pages:
+  - `GET /runs/{id}/tool-calls`, `/llm-calls`, `/test-runs` (with per-test results),
+    `/diff` (with review flags and validation) and `/approvals`.
+  - `POST /runs/{id}/approve`, bound to the diff SHA-256 (409 `stale_diff`), and
+    `POST /runs/{id}/reject`.
+  - Run summaries include the repository, issue, tokens and fix attempts.
+- Terminal output is rendered as text; ANSI colors become CSS classes.
+- Playwright smoke test against the running stack, which also captures the README
+  screenshots in `docs/images/`. CI runs it in the integration job.
+
+### Verified (see phase report)
+- Playwright smoke: a seeded scripted run is followed live in the browser to
+  `awaiting_approval`, every tab renders, the diff is reviewed and approved, the theme
+  toggle persists, and an unknown run shows an error state.
+- Vitest: ANSI parser (including HTML staying text), formatters, the API error
+  envelope, the timeline, the terminal, and the SSE hook (dedup after reconnect,
+  closing on a final status, the disabled state).
+- The deployed-stack integration test covers the new endpoints and the stale-diff
+  rejection.
+
+### Known issues / deferred
+- Approval stops at `approved`. Opening the pull request is Phase 8.
+- The evaluation page has no data until Phase 9.
+- Screenshots show a scripted run; a real-model run needs an API key.
+
