@@ -25,6 +25,7 @@ RUN --mount=type=secret,id=extra_ca,required=false \
     pip install --no-cache-dir uv==0.8.17; \
     uv sync --frozen --no-dev --no-install-project
 
+COPY core ./core
 COPY backend ./backend
 COPY agent ./agent
 COPY tools ./tools
