@@ -12,6 +12,7 @@ from agent.ports import RunCancelledError
 from backend import __version__
 from backend.config import get_settings
 from backend.event_bus import EventBus
+from backend.services.publishing import publish_run
 from backend.services.recorder import DbRunRecorder
 from backend.services.runs import mark_run_failed
 from backend.worker.agent_job import run_agent
@@ -88,3 +89,19 @@ async def execute_run(ctx: dict[str, Any], run_id_str: str) -> str:
         raise
     log.info("run_finished")
     return "ok"
+
+
+async def publish(ctx: dict[str, Any], run_id_str: str) -> str:
+    """Open the draft PR for an approved run, or record the patch fallback."""
+    run_id = UUID(run_id_str)
+    try:
+        return await publish_run(
+            run_id,
+            session_factory=ctx["session_factory"],
+            bus=ctx["event_bus"],
+            auth=ctx["auth_service"],
+            settings=get_settings(),
+        )
+    except RunCancelledError as exc:  # cancelled or finished meanwhile
+        logger.info("publish_stopped", run_id=run_id_str, reason=str(exc))
+        return "stopped"

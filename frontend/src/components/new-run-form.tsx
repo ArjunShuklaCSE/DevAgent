@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
-import { api, type Repository } from "@/lib/api";
+import { api, type GitHubIssue, type Repository } from "@/lib/api";
 
 import { Button, Card, ErrorState, Field, inputClass } from "./ui";
 
@@ -27,6 +27,18 @@ export function NewRunForm() {
   const [model, setModel] = useState("");
   const [maxCost, setMaxCost] = useState("2.00");
   const [maxAttempts, setMaxAttempts] = useState("3");
+
+  const issues = useMutation({
+    mutationFn: async () => {
+      const repo = await api.addRepository({ url: url.trim() });
+      return api.issues(repo.id);
+    },
+  });
+  const pick = (issue: GitHubIssue) => {
+    setTitle(issue.title);
+    setBody(issue.body);
+    setNumber(String(issue.number));
+  };
 
   const create = useMutation({
     mutationFn: async () => {
@@ -91,14 +103,60 @@ export function NewRunForm() {
               ))}
             </select>
           ) : (
-            <input
-              aria-label="Repository URL"
-              className={inputClass}
-              placeholder="https://github.com/owner/repo"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              required
-            />
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <input
+                  aria-label="Repository URL"
+                  className={inputClass}
+                  placeholder="https://github.com/owner/repo"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  required
+                />
+                <Button onClick={() => issues.mutate()} disabled={!url.trim() || issues.isPending}>
+                  {issues.isPending ? "Loading…" : "Load issues"}
+                </Button>
+              </div>
+              {issues.isError && <ErrorState title="Could not load issues" error={issues.error} />}
+              {issues.data && issues.data.length === 0 && (
+                <p className="text-xs text-zinc-500">
+                  No open issues. Paste the issue below instead.
+                </p>
+              )}
+              {issues.data && issues.data.length > 0 && (
+                <ul
+                  aria-label="Open issues"
+                  className="max-h-64 divide-y divide-zinc-200 overflow-y-auto rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800"
+                >
+                  {issues.data.map((issue) => (
+                    <li key={issue.number}>
+                      <button
+                        type="button"
+                        onClick={() => pick(issue)}
+                        aria-pressed={number === String(issue.number)}
+                        className="flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm hover:bg-zinc-50 aria-pressed:bg-indigo-50 dark:hover:bg-zinc-900 dark:aria-pressed:bg-indigo-950/40"
+                      >
+                        <span>
+                          <span className="text-zinc-500">#{issue.number}</span> {issue.title}
+                        </span>
+                        <span className="flex flex-wrap gap-2 text-xs text-zinc-500">
+                          {issue.labels.map((label) => (
+                            <span
+                              key={label}
+                              className="rounded bg-zinc-100 px-1.5 dark:bg-zinc-800"
+                            >
+                              {label}
+                            </span>
+                          ))}
+                          <span>{issue.comments} comments</span>
+                          {issue.user && <span>by {issue.user}</span>}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </fieldset>
 

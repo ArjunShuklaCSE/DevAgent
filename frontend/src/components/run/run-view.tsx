@@ -228,6 +228,14 @@ function RunHeader({
         {run.status_reason && <p className="mt-2 text-sm text-zinc-500">{run.status_reason}</p>}
       </div>
       <div className="flex shrink-0 gap-2">
+        {run.result.delivery?.kind === "pull_request" && (
+          <a
+            href={run.result.delivery.url}
+            className="inline-flex items-center rounded-md border border-emerald-600 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+          >
+            Pull request #{run.result.delivery.number}
+          </a>
+        )}
         {run.final_diff_sha256 && (
           <Link
             href={`/runs/${run.id}/review`}

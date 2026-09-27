@@ -14,6 +14,13 @@ x-backend-env: &backend-env
   DEVAGENT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-devagent}:${POSTGRES_PASSWORD:-devagent}@postgres:5432/${POSTGRES_DB:-devagent}
   DEVAGENT_REDIS_URL: redis://redis:6379/0
   DEVAGENT_CORS_ORIGINS: '["http://localhost:3000"]'
+  DEVAGENT_PUBLIC_WEB_URL: ${DEVAGENT_PUBLIC_WEB_URL:-http://localhost:3000}
+  # GitHub (ADR 0017). All optional: without them runs on GitHub repositories still
+  # work, and approved fixes are delivered as patch files instead of pull requests.
+  DEVAGENT_SECRET_KEY: ${DEVAGENT_SECRET_KEY:-}
+  DEVAGENT_GITHUB_CLIENT_ID: ${DEVAGENT_GITHUB_CLIENT_ID:-}
+  DEVAGENT_GITHUB_CLIENT_SECRET: ${DEVAGENT_GITHUB_CLIENT_SECRET:-}
+  DEVAGENT_GITHUB_TOKEN: ${DEVAGENT_GITHUB_TOKEN:-}
 
 x-backend-build: &backend-build
   context: .
@@ -97,7 +104,6 @@ services:
       DEVAGENT_LLM_MODEL: ${DEVAGENT_LLM_MODEL:-}
       DEVAGENT_ANTHROPIC_API_KEY: ${DEVAGENT_ANTHROPIC_API_KEY:-}
       DEVAGENT_OPENAI_API_KEY: ${DEVAGENT_OPENAI_API_KEY:-}
-      DEVAGENT_PUBLIC_WEB_URL: ${DEVAGENT_PUBLIC_WEB_URL:-http://localhost:3000}
       # Only used by runs that explicitly request the "scripted" model: replays a test
       # cassette so the whole pipeline can be demonstrated without an API key.
       DEVAGENT_LLM_SCRIPT_PATH: ${DEVAGENT_LLM_SCRIPT_PATH:-/app/cassettes/slugger_fix.yaml}

@@ -294,3 +294,42 @@ class ApprovalOut(_Out):
     diff_sha256: str
     comment: str | None
     created_at: datetime
+
+
+# --------------------------------------------------------------------------- auth & GitHub
+
+
+class UserOut(_Out):
+    id: UUID
+    login: str
+    name: str | None
+    avatar_url: str | None
+
+
+class AuthStatus(BaseModel):
+    oauth_enabled: bool = Field(description="GitHub sign-in is configured on this server")
+    github_token_configured: bool = Field(
+        description="A server-wide token (DEVAGENT_GITHUB_TOKEN) is available for GitHub calls"
+    )
+    user: UserOut | None
+
+
+class GitHubIssueOut(BaseModel):
+    number: int
+    title: str
+    body: str
+    html_url: str
+    labels: list[str]
+    comments: int
+    user: str | None
+    created_at: str
+
+
+class PullRequestOut(_Out):
+    number: int
+    url: str
+    branch: str
+    head_sha: str
+    state: str
+    is_draft: bool
+    created_at: datetime

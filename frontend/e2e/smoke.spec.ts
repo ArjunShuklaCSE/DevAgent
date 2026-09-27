@@ -70,7 +70,13 @@ test("a scripted run is followed live, reviewed and approved in the browser", as
   await page.getByRole("button", { name: "Unified" }).click();
   await page.getByLabel("Review comment").fill("Reproduced locally; the guard is right.");
   await page.getByRole("button", { name: "Approve" }).click();
-  await expect(page.getByText("Approved", { exact: false }).first()).toBeVisible();
+  // A sample repository has no GitHub remote: the fix is delivered as a patch file.
+  await expect(page.getByText("No pull request was opened")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/local sample repository/)).toBeVisible();
+  const download = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download patch" }).click();
+  expect((await download).suggestedFilename()).toBe("devagent-issue-3.patch");
+  await shot(page, "review-approved");
 
   // History and the evaluation placeholder.
   await page.goto("/runs");

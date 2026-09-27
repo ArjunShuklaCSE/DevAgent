@@ -130,6 +130,16 @@ export interface RunResult {
   validation?: { checks: CheckResult[] };
   review_flags?: ReviewFlag[];
   pull_request?: { title: string; body: string; commit_message: string };
+  delivery?:
+    | {
+        kind: "pull_request";
+        number: number;
+        url: string;
+        branch: string;
+        base_moved: boolean;
+        at: string;
+      }
+    | { kind: "patch"; code: string; reason: string; at: string };
   failure?: { code: string; message: string; category: string };
   budget?: Record<string, unknown>;
 }
@@ -208,6 +218,30 @@ export interface RunDiff {
   sha256: string | null;
   review_flags: ReviewFlag[];
   validation: { checks: CheckResult[] } | null;
+}
+
+export interface UserInfo {
+  id: string;
+  login: string;
+  name: string | null;
+  avatar_url: string | null;
+}
+
+export interface AuthStatus {
+  oauth_enabled: boolean;
+  github_token_configured: boolean;
+  user: UserInfo | null;
+}
+
+export interface GitHubIssue {
+  number: number;
+  title: string;
+  body: string;
+  html_url: string;
+  labels: string[];
+  comments: number;
+  user: string | null;
+  created_at: string;
 }
 
 export interface RunCreate {
@@ -293,6 +327,18 @@ export const api = {
     post<Run>(`/runs/${id}/approve`, { diff_sha256: diffSha256, comment: comment || null }),
   reject: (id: string, comment: string) =>
     post<Run>(`/runs/${id}/reject`, { comment: comment || null }),
+  publish: (id: string) => post<Run>(`/runs/${id}/publish`, {}),
+  me: () => request<AuthStatus>("/auth/me"),
+  logout: () =>
+    fetch("/api/v1/auth/logout", { method: "POST" }).then((r) => {
+      if (!r.ok) throw new ApiError(r.status, "logout_failed", "Sign-out failed");
+    }),
+  issues: (repositoryId: string) =>
+    request<GitHubIssue[]>(`/repositories/${repositoryId}/issues?limit=30`),
 };
+
+export const patchUrl = (id: string) => `/api/v1/runs/${id}/patch`;
+export const loginUrl = (next: string) =>
+  `/api/v1/auth/github/login?next=${encodeURIComponent(next)}`;
 
 export { request as _request };

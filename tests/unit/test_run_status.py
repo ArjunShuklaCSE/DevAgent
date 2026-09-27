@@ -24,6 +24,7 @@ from core.run_status import (
         (RunStatus.AWAITING_APPROVAL, RunStatus.REJECTED),
         (RunStatus.APPROVED, RunStatus.CREATING_PR),
         (RunStatus.CREATING_PR, RunStatus.PR_CREATED),
+        (RunStatus.CREATING_PR, RunStatus.APPROVED),  # PR failed; patch and retry remain
         (RunStatus.EDITING, RunStatus.BUDGET_EXCEEDED),
         (RunStatus.CLONING, RunStatus.TIMED_OUT),
         (RunStatus.QUEUED, RunStatus.CANCELLED),
@@ -59,8 +60,10 @@ def test_terminal_statuses_have_no_exits() -> None:
 def test_pr_creation_requires_approval() -> None:
     sources = [s for s in RunStatus if RunStatus.CREATING_PR in allowed_transitions(s)]
     assert sources == [RunStatus.APPROVED]
+    # Only a human decision leads into approved; creating_pr falls back to it when the
+    # PR could not be opened.
     sources = [s for s in RunStatus if RunStatus.APPROVED in allowed_transitions(s)]
-    assert sources == [RunStatus.AWAITING_APPROVAL]
+    assert sources == [RunStatus.AWAITING_APPROVAL, RunStatus.CREATING_PR]
 
 
 def test_every_status_is_reachable_from_queued() -> None:

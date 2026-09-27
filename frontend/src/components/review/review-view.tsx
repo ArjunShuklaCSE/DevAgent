@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Diff, Hunk, parseDiff, type ViewType } from "react-diff-view";
 
-import { api, type CheckResult, type ReviewFlag } from "@/lib/api";
+import { api, patchUrl, type CheckResult, type ReviewFlag, type Run } from "@/lib/api";
 import { humanize } from "@/lib/format";
 
 import { runRepoName } from "../recent-runs";
@@ -48,7 +48,16 @@ const FLAG_LABEL: Record<ReviewFlag["kind"], string> = {
 
 export function ReviewView({ runId }: { runId: string }) {
   const queryClient = useQueryClient();
-  const run = useQuery({ queryKey: ["run", runId], queryFn: () => api.run(runId) });
+  const run = useQuery({
+    queryKey: ["run", runId],
+    queryFn: () => api.run(runId),
+    // Opening the PR happens in the background after approval; follow it.
+    refetchInterval: (query) =>
+      query.state.data?.status === "creating_pr" ||
+      (query.state.data?.status === "approved" && !query.state.data.result.delivery)
+        ? 1500
+        : false,
+  });
   const diff = useQuery({ queryKey: ["diff", runId], queryFn: () => api.diff(runId) });
   const [viewType, setViewType] = useState<ViewType>("split");
   const [comment, setComment] = useState("");
@@ -232,15 +241,13 @@ export function ReviewView({ runId }: { runId: string }) {
                     If the diff changes, you will be asked to review again.
                   </p>
                 </>
+              ) : ["approved", "creating_pr", "pr_created"].includes(data.status) ? (
+                <Delivery run={data} />
               ) : (
                 <p className="text-sm">
-                  {data.status === "approved" ||
-                  data.status === "pr_created" ||
-                  data.status === "creating_pr"
-                    ? "Approved."
-                    : data.status === "rejected"
-                      ? "Rejected."
-                      : `This run is ${humanize(data.status).toLowerCase()}; there is nothing to approve.`}
+                  {data.status === "rejected"
+                    ? "Rejected."
+                    : `This run is ${humanize(data.status).toLowerCase()}; there is nothing to approve.`}
                 </p>
               )}
               {decide.isError && <ErrorState title="Decision not recorded" error={decide.error} />}
@@ -255,6 +262,78 @@ export function ReviewView({ runId }: { runId: string }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function Delivery({ run }: { run: Run }) {
+  const queryClient = useQueryClient();
+  const retry = useMutation({
+    mutationFn: () => api.publish(run.id),
+    onSuccess: (updated) => {
+      // Clear the old outcome so the page polls until the new attempt finishes.
+      queryClient.setQueryData(["run", run.id], {
+        ...updated,
+        result: { ...updated.result, delivery: undefined },
+      });
+    },
+  });
+  const delivery = run.result.delivery;
+  const patch = (
+    <a
+      href={patchUrl(run.id)}
+      className="text-sm text-indigo-600 hover:underline dark:text-indigo-400"
+      download
+    >
+      Download patch
+    </a>
+  );
+  if (delivery?.kind === "pull_request") {
+    return (
+      <div className="flex flex-col gap-2 text-sm">
+        <p>
+          Draft pull request{" "}
+          <a
+            href={delivery.url}
+            className="font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+          >
+            #{delivery.number}
+          </a>{" "}
+          opened from <span className="font-mono text-xs">{delivery.branch}</span>.
+        </p>
+        {delivery.base_moved && (
+          <p className="text-xs text-zinc-500">
+            The default branch moved since the run; the PR is based on the validated commit.
+          </p>
+        )}
+        {patch}
+      </div>
+    );
+  }
+  if (run.status === "creating_pr" || !delivery) {
+    return (
+      <Loading
+        label={
+          run.status === "creating_pr"
+            ? "Opening the draft pull request"
+            : "Approved, preparing delivery"
+        }
+      />
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2 text-sm">
+      <p>Approved. No pull request was opened:</p>
+      <p className="text-xs text-zinc-600 dark:text-zinc-400">{delivery.reason}</p>
+      <div className="flex items-center gap-3">
+        {patch}
+        {delivery.code !== "not_a_github_repository" && (
+          <Button onClick={() => retry.mutate()} disabled={retry.isPending}>
+            Retry pull request
+          </Button>
+        )}
+      </div>
+      {retry.isError && <ErrorState title="Retry failed" error={retry.error} />}
     </div>
   );
 }

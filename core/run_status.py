@@ -57,7 +57,9 @@ _FORWARD: Final[dict[RunStatus, frozenset[RunStatus]]] = {
     RunStatus.VALIDATING: frozenset({RunStatus.AWAITING_APPROVAL}),
     RunStatus.AWAITING_APPROVAL: frozenset({RunStatus.APPROVED, RunStatus.REJECTED}),
     RunStatus.APPROVED: frozenset({RunStatus.CREATING_PR}),
-    RunStatus.CREATING_PR: frozenset({RunStatus.PR_CREATED}),
+    # Back to approved when opening the PR fails (permissions, rate limit, base moved):
+    # the approved fix stays available as a patch and the PR can be retried.
+    RunStatus.CREATING_PR: frozenset({RunStatus.PR_CREATED, RunStatus.APPROVED}),
 }
 
 # Approval is a human decision; no automatic budget/timeout exit while waiting on it

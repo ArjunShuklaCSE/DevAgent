@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { Account } from "./account";
 import { ThemeToggle } from "./theme-toggle";
 import { cx } from "./ui";
 
@@ -40,7 +41,8 @@ export function Nav() {
             </Link>
           ))}
         </nav>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-3">
+          <Account />
           <ThemeToggle />
         </div>
       </div>
