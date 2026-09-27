@@ -10,7 +10,7 @@ Build follows the phased plan in the spec (Section 16). Each phase stops for rev
 | 3 | Docker sandbox | ✅ Done |
 | 4 | Tools | ✅ Done |
 | 5 | LLM layer, budgets, prompt structure | ✅ Done |
-| 6 | Agent loop | Not started |
+| 6 | Agent loop | ✅ Done (real-LLM demo pending an API key) |
 | 7 | Frontend dashboard | Not started |
 | 8 | GitHub auth, approval, PR creation | Not started |
 | 9 | Evaluation framework | Not started |
@@ -259,3 +259,67 @@ its own draft PR, report and verification.
 Phase 6: orchestrator and all components (issue analyzer, localizer, reproducer,
 planner, editor, debugger, validator, PR writer), reproduction-first flow with a
 bounded debug loop, and a ScriptedLLM integration run that reaches `awaiting_approval`.
+
+## Phase 6: Agent loop (2026-09-27)
+
+### Done
+- `agent/orchestrator.py`: `StateMachineOrchestrator` behind an `Orchestrator`
+  interface. It runs clone, analyze repo (install plus baseline suite and lint, format
+  and type checks), analyze issue, localize and reproduce, then plan, edit and test
+  with a bounded debug loop, then validate and wait for approval (ADR 0015).
+- Reproduction first: the new test must fail (not error) on the buggy code before any
+  fix. The reproduction step may only add files; other changes are reverted and the
+  model gets feedback. The confirmed test is read-only for the editor.
+- Success is decided by the orchestrator, not the model. The reproduction test must
+  pass, and no test that passed at baseline may fail or disappear (`agent/validation.py`).
+- Components with typed Pydantic outputs and versioned prompts in
+  `agent/prompts/<component>/v1.md`: issue analyzer, localizer, reproducer, planner,
+  editor, debugger and PR writer. Every answer carries a rationale, which is stored on
+  its step.
+- `ComponentRuntime`: layered prompts, structured answers, and a bounded tool loop with
+  a final submit-only turn. Tool output is wrapped as untrusted, and file reads are
+  scanned for injection attempts.
+- Budgets are enforced before every step, fix attempt and LLM call. Running out gives
+  `budget_exceeded`; the wall clock gives `timed_out`. Workspace size is checked
+  between steps. Failures carry a code and a failure category for the eval taxonomy.
+- Validator and review flags: lint, format and type checks are compared with the
+  baseline, and sensitive or protected paths, new dependencies, network calls and
+  deleted tests are flagged. The PR body is built from recorded results only
+  (`agent/pr_text.py`).
+- Recorded on the run: base commit, config snapshot (model, provider, temperature),
+  prompt versions, sandbox image ID, final diff and SHA-256, injection flags, running
+  token and cost totals. The new `agent_runs.result` field (migration 0002) holds the
+  plan, reproduction, validation, review flags and PR text.
+- Test runs and per-test results are written to `test_runs` and `test_results`, with
+  `test_result` events.
+- Worker: `run_agent` composition root. A watcher kills the run's sandbox containers
+  and stops the orchestrator when the run is cancelled.
+- API: `mode: "agent"` is now the default. New fields: `model` and issue `number`.
+  Bundled sample repositories can be registered (`{"sample": "slugger"}`, `GET
+  /repositories/samples`). Run responses include the replay fields and the result.
+- A `scripted` model provider replays a cassette. Compose maps it to
+  `tests/cassettes/slugger_fix.yaml`, so the full pipeline can be shown without a key.
+
+### Verified (see phase report)
+- Integration test: a ScriptedLLM run on `sample_repos/slugger` goes through the real
+  sandbox and database to `awaiting_approval` with the correct diff, including one
+  wrong fix corrected by the debug loop.
+- Deployed-stack tests: the same run through API, queue, worker, proxy and sandbox; an
+  unusable model fails clearly; cancelling mid-run removes the run's containers and
+  closes its steps.
+- Orchestrator unit tests with real pytest runs on a fixture repository cover: the happy
+  path; the debug loop; a reproduction that passes and is rejected; a reproducer that
+  edits existing code; fix-attempt, token, cost, step and wall-clock limits;
+  injection flags.
+
+### Known issues / deferred
+- No real-LLM run yet (spec acceptance: "a real-LLM run fixes at least one sample
+  bug"): it needs an API key and model choice from Batmxn.
+- Lint, format and type-check regressions are warnings on the approval screen; they do
+  not send the run back to debugging, because the state machine has no validating to
+  debugging edge.
+- The repository analyzer is static only; there is no LLM summary step (spec: "LLM only
+  to summarize").
+- An optional LangGraph adapter is not built. The `Orchestrator` interface is the
+  extension point.
+- OpenTelemetry spans are still not emitted; structured logs carry `run_id` and `step_id`.

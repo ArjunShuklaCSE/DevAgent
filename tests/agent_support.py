@@ -73,11 +73,19 @@ ISSUE = IssueSpec(
 )
 
 REPRO_FILE = "tests/test_mean_empty.py"
-REPRO_TEST = "from calc import mean\n\n\ndef test_mean_of_empty_list_is_zero():\n    assert mean([]) == 0.0\n"
-PASSING_REPRO = "from calc import mean\n\n\ndef test_mean_still_works():\n    assert mean([2.0]) == 2.0\n"
+REPRO_TEST = (
+    "from calc import mean\n\n\n"
+    "def test_mean_of_empty_list_is_zero():\n    assert mean([]) == 0.0\n"
+)
+PASSING_REPRO = (
+    "from calc import mean\n\n\ndef test_mean_still_works():\n    assert mean([2.0]) == 2.0\n"
+)
 FIX_OLD = "    return sum(values) / len(values)\n"
 FIX_NEW = "    if not values:\n        return 0.0\n    return sum(values) / len(values)\n"
-WRONG_FIX = "    if not values:\n        return None  # type: ignore[return-value]\n    return sum(values) / len(values)\n"
+WRONG_FIX = (
+    "    if not values:\n        return None  # type: ignore[return-value]\n"
+    "    return sum(values) / len(values)\n"
+)
 
 
 def write_repo(root: Path, files: dict[str, str] | None = None) -> Path:
@@ -190,7 +198,7 @@ class RecordingTestSink:
 # --------------------------------------------------------------------------- scripts
 
 
-def submit(component: str, **answer: Any) -> ScriptStep:
+def submit(component: str, /, **answer: Any) -> ScriptStep:
     return ScriptStep(
         expect_component=component,
         tool_calls=[ScriptedToolCall(name="submit", input=answer)],
@@ -199,10 +207,10 @@ def submit(component: str, **answer: Any) -> ScriptStep:
     )
 
 
-def tool(component: str, name: str, **arguments: Any) -> ScriptStep:
+def tool(component: str, tool_name: str, /, **arguments: Any) -> ScriptStep:
     return ScriptStep(
         expect_component=component,
-        tool_calls=[ScriptedToolCall(name=name, input=arguments)],
+        tool_calls=[ScriptedToolCall(name=tool_name, input=arguments)],
         input_tokens=400,
         output_tokens=60,
     )
@@ -332,7 +340,10 @@ class AgentHarness:
         self.registry = default_registry()
         client = MeteredLLMClient(self.scripted, PRICING, self.budget, "run-1")
         self.runtime = ComponentRuntime(
-            client, ModelSettings(model=MODEL, max_output_tokens=1000), PromptLibrary(PROMPTS), self.registry
+            client,
+            ModelSettings(model=MODEL, max_output_tokens=1000),
+            PromptLibrary(PROMPTS),
+            self.registry,
         )
         self.orchestrator = StateMachineOrchestrator(
             config=AgentConfig(run_url="http://localhost:3000/runs/run-1"),

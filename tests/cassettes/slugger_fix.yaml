@@ -1,0 +1,129 @@
+# ScriptedLLM cassette: a full agent run on sample_repos/slugger, including one wrong
+# fix that the debug loop corrects. Deterministic test input, not a recording of a real
+# model (spec 14). Used by tests/integration/test_agent_run.py and for key-free demos
+# (DEVAGENT_LLM_MODEL=scripted, DEVAGENT_LLM_SCRIPT_PATH=<this file>).
+steps:
+  - expect_component: issue_analyzer
+    expect_in_prompt: ["IndexError"]
+    tool_calls:
+      - name: submit
+        input:
+          rationale: The issue names the function, the inputs and the exception.
+          summary: slugify raises IndexError for titles with no letters or digits.
+          expected_behavior: slugify("") and slugify("!!!") return an empty string.
+          current_behavior: Both raise IndexError (list index out of range).
+          reproduction_steps: ['from slugger import slugify', 'slugify("!!!")']
+          suspected_areas: [slugger/slug.py]
+          acceptance_criteria:
+            - slugify("") == ""
+            - slugify("!!!") == ""
+            - existing slugs are unchanged
+          confidence: high
+  - expect_component: localizer
+    tool_calls:
+      - name: search_text
+        input: {pattern: "def slugify"}
+  - expect_component: localizer
+    expect_in_prompt: ["slugger/slug.py"]
+    tool_calls:
+      - name: read_file
+        input: {path: slugger/slug.py, start_line: 1, end_line: 20}
+  - expect_component: localizer
+    tool_calls:
+      - name: submit
+        input:
+          rationale: slugify indexes words[0] after filtering out every empty word.
+          candidates:
+            - path: slugger/slug.py
+              symbol: slugify
+              score: 0.95
+              evidence: ["slug.py: if words[0].isdigit() runs even when words is empty"]
+  - expect_component: reproducer
+    tool_calls:
+      - name: create_file
+        input:
+          path: tests/test_slug_empty.py
+          content: |
+            from slugger import slugify
+
+
+            def test_empty_title_gives_empty_slug():
+                assert slugify("") == ""
+
+
+            def test_symbol_only_title_gives_empty_slug():
+                assert slugify("!!!") == ""
+  - expect_component: reproducer
+    tool_calls:
+      - name: run_tests
+        input: {selector: [tests/test_slug_empty.py]}
+  - expect_component: reproducer
+    expect_in_prompt: ["IndexError"]
+    tool_calls:
+      - name: submit
+        input:
+          rationale: Both tests hit the IndexError described in the issue.
+          test_file: tests/test_slug_empty.py
+          test_ids:
+            - tests/test_slug_empty.py::test_empty_title_gives_empty_slug
+            - tests/test_slug_empty.py::test_symbol_only_title_gives_empty_slug
+          explanation: slugify indexes words[0] when no words remain.
+  - expect_component: planner
+    tool_calls:
+      - name: submit
+        input:
+          rationale: Returning early when nothing is left fixes the root cause.
+          steps: ["In slugger/slug.py, slugify: return an empty slug when no words remain, before words[0] is read."]
+          files_to_touch: [slugger/slug.py]
+          risks: []
+          test_strategy: The new reproduction tests must pass and the three existing tests must keep passing.
+  # First attempt: wrong return value.
+  - expect_component: editor
+    tool_calls:
+      - name: edit_file
+        input:
+          path: slugger/slug.py
+          old_str: "    words = [w for w in words if w]\n"
+          new_str: "    words = [w for w in words if w]\n    if not words:\n        return \"-\"\n"
+  - expect_component: editor
+    tool_calls:
+      - name: submit
+        input:
+          rationale: Added the guard from the plan.
+          changes_made: [slugify returns early when no words remain]
+  - expect_component: debugger
+    expect_in_prompt: ["test_symbol_only_title_gives_empty_slug"]
+    tool_calls:
+      - name: submit
+        input:
+          rationale: The guard is right but returns "-" instead of an empty string.
+          failure_class: assertion
+          root_cause: The early return gives "-" where the tests and the docstring expect "".
+          next_action: retry_edit
+          guidance: In slugger/slug.py, make the early return give "" instead of "-".
+  - expect_component: editor
+    expect_in_prompt: ["instead of"]
+    tool_calls:
+      - name: edit_file
+        input:
+          path: slugger/slug.py
+          old_str: "        return \"-\"\n"
+          new_str: "        return \"\"\n"
+  - expect_component: editor
+    tool_calls:
+      - name: submit
+        input:
+          rationale: Applied the debugger's correction.
+          changes_made: [slugify returns an empty string when no words remain]
+  - expect_component: pr_writer
+    tool_calls:
+      - name: submit
+        input:
+          rationale: Summarises the validated change.
+          title: Return an empty slug for titles without letters or digits
+          issue_summary: slugify raised IndexError for empty or symbol-only titles instead of returning an empty slug.
+          root_cause: After dropping empty words, slugify read words[0] without checking that any word was left.
+          changes_made: ["slugger/slug.py: return \"\" when no words remain"]
+          tests_added:
+            - "tests/test_slug_empty.py: empty and symbol-only titles give an empty slug"
+          commit_message: "Return an empty slug for titles without words\n\nslugify read words[0] after filtering out every word."

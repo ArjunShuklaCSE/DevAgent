@@ -61,6 +61,10 @@ RUN groupadd --system --gid 10001 devagent \
 COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
 COPY config ./config
+# Versioned prompts are read at run time (paths recorded with every LLM call), and the
+# sample repositories can be registered as run sources.
+COPY agent/prompts ./agent/prompts
+COPY sample_repos ./sample_repos
 USER devagent
 EXPOSE 8000
 CMD ["uvicorn", "backend.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

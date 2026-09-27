@@ -99,14 +99,25 @@ class RunService:
                 raise NotFoundError(
                     "Repository not found", {"repository_id": str(data.repository_id)}
                 )
-            issue = Issue(
-                repository_id=repo.id,
-                source=IssueSource.PASTED,
-                number=data.issue.number,
-                title=data.issue.title,
-                body=data.issue.body,
-            )
-            session.add(issue)
+            issue = None
+            if data.issue.number is not None:
+                # One row per numbered issue; a new run of the same issue reuses it.
+                issue = await session.scalar(
+                    select(Issue).where(
+                        Issue.repository_id == repo.id, Issue.number == data.issue.number
+                    )
+                )
+            if issue is None:
+                issue = Issue(
+                    repository_id=repo.id,
+                    source=IssueSource.PASTED,
+                    number=data.issue.number,
+                    title=data.issue.title,
+                    body=data.issue.body,
+                )
+                session.add(issue)
+            else:
+                issue.title, issue.body = data.issue.title, data.issue.body
             await session.flush()
             run = AgentRun(
                 repository_id=repo.id,

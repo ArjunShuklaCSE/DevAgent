@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["development", "test", "production"]
@@ -82,6 +82,12 @@ class Settings(BaseSettings):
     agent_reproducer_rounds: int = Field(default=10, ge=1, le=50)
     agent_editor_rounds: int = Field(default=12, ge=1, le=50)
     keep_workspaces: bool = False  # keep run directories after the run for debugging
+
+    @field_validator("anthropic_api_key", "openai_api_key", "llm_model", mode="before")
+    @classmethod
+    def _empty_is_unset(cls, value: object) -> object:
+        # Compose passes unset variables as empty strings.
+        return None if value == "" else value
 
 
 @lru_cache(maxsize=1)
