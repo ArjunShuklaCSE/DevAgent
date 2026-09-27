@@ -217,7 +217,7 @@ Every endpoint is listed in [docs/api.md](docs/api.md).
 ### MCP server
 
 Expose a local checkout's read-only code tools and DevAgent's run control to any MCP
-client (for example, Claude Desktop or an IDE assistant):
+client (for example, a desktop chat app or an IDE assistant):
 
 ```json
 {
