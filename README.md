@@ -36,8 +36,6 @@ and a benchmark harness that reports only numbers it measured.
 
 ## Demo
 
-> 🎥 **Demo video:** not recorded yet.
-
 All screenshots below are from real runs on the bundled `slugger` sample, using the
 key-free `scripted` model (a recorded model session replayed against the live
 sandbox).
